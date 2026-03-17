@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import { motion, useInView } from "framer-motion";
 import { MapPin, Mail, Phone } from "lucide-react";
+import { socialLinks } from "@/components/ui/SocialIcons";
 import { Button } from "@/components/ui/Button";
 
 const fadeUp = {
@@ -85,11 +86,30 @@ export function Contacto() {
             })}
           </div>
 
+          {/* Social icons */}
+          <div className="mt-8 flex items-center gap-4">
+            {socialLinks.map((s) => {
+              const Icon = s.icon;
+              return (
+                <a
+                  key={s.label}
+                  href={s.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={s.label}
+                  className="text-black transition-colors hover:text-[#6E6E6E]"
+                >
+                  <Icon />
+                </a>
+              );
+            })}
+          </div>
+
           <p
             className="mt-10 font-body text-sm italic"
             style={{ color: "#6E6E6E" }}
           >
-            Respuesta en menos de 24 horas hábiles.
+            Respuesta inmediata. Disponibilidad continua.
           </p>
         </motion.div>
 

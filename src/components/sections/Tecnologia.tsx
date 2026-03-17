@@ -15,24 +15,21 @@ const fadeUp = {
 const phases = [
   {
     num: "01",
-    label: "Fase 1",
     title: "Fundamentos de datos",
     description:
-      "Base de datos estructurada de comparables. Dashboards analíticos. Automatización con RPA.",
+      "Base de datos estructurada de comparables inmobiliarios. Dashboards analíticos y automatización de procesos operativos.",
   },
   {
     num: "02",
-    label: "Fase 2",
     title: "Modelos automatizados",
     description:
-      "Machine learning que estima valores preliminares en segundos. Piloto con valuadores en campo.",
+      "Algoritmos de machine learning que estiman valores preliminares en segundos. Validación cruzada con valuadores en campo.",
   },
   {
     num: "03",
-    label: "Fase 3",
     title: "IA en producción",
     description:
-      "Integración plena en el flujo de valuación. Analítica predictiva para decisiones de negocio.",
+      "Integración plena en el flujo de valuación. Analítica predictiva y procesos autónomos de inteligencia de mercado.",
   },
 ];
 
@@ -42,7 +39,8 @@ export function Tecnologia() {
 
   return (
     <section id="tecnologia" className="bg-white px-6 py-24 md:py-32">
-      <div ref={ref} className="mx-auto max-w-3xl">
+      <div ref={ref} className="mx-auto max-w-4xl">
+        {/* Label */}
         <motion.p
           className="text-center font-body text-xs font-medium uppercase tracking-[0.2em]"
           style={{ color: "#6E6E6E" }}
@@ -54,53 +52,82 @@ export function Tecnologia() {
           Cómo lo hacemos
         </motion.p>
 
-        <div className="mt-12">
+        {/* Title */}
+        <motion.h2
+          className="mt-6 text-center font-display text-3xl font-bold tracking-tight text-black md:text-4xl"
+          variants={fadeUp}
+          initial="hidden"
+          animate={inView ? "visible" : "hidden"}
+          custom={1}
+        >
+          Roadmap tecnológico
+        </motion.h2>
+
+        {/* Desktop timeline — horizontal */}
+        <motion.div
+          className="mt-16 hidden md:grid md:grid-cols-3"
+          variants={fadeUp}
+          initial="hidden"
+          animate={inView ? "visible" : "hidden"}
+          custom={2}
+        >
           {phases.map((phase, i) => (
-            <motion.div
-              key={phase.num}
-              className={`relative py-16 ${i < phases.length - 1 ? "border-b border-[#E6E6E6]" : ""}`}
-              variants={fadeUp}
-              initial="hidden"
-              animate={inView ? "visible" : "hidden"}
-              custom={i + 1}
-            >
-              {/* Watermark number */}
-              <span
-                className={`pointer-events-none absolute top-6 select-none font-display text-8xl font-bold ${i % 2 === 0 ? "left-0" : "right-0"}`}
-                style={{ color: "#E6E6E6", zIndex: 0 }}
-              >
-                {phase.num}
-              </span>
+            <div key={phase.num} className="relative border-t border-black px-6 first:pl-0 last:pr-0">
+              {/* Dot */}
+              <div className="absolute -top-[5px] left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-black" />
 
               {/* Content */}
-              <div className="relative z-10">
-                <p
-                  className="font-body text-xs font-medium uppercase tracking-widest"
-                  style={{ color: "#6E6E6E" }}
-                >
-                  {phase.label}
-                </p>
-                <h3 className="mt-1 font-body text-xl font-semibold tracking-tight text-black">
+              <div className="mt-8">
+                <span className="font-body text-sm font-light" style={{ color: "#6E6E6E" }}>
+                  {phase.num}
+                </span>
+                <h3 className="mt-2 font-body text-lg font-semibold tracking-tight text-black">
                   {phase.title}
                 </h3>
-                <p
-                  className="mt-2 font-body text-base leading-relaxed"
-                  style={{ color: "#2B2B2B" }}
-                >
+                <p className="mt-2 font-body text-sm leading-relaxed" style={{ color: "#2B2B2B" }}>
                   {phase.description}
                 </p>
               </div>
+            </div>
+          ))}
+        </motion.div>
+
+        {/* Mobile timeline — vertical */}
+        <div className="mt-16 md:hidden">
+          {phases.map((phase, i) => (
+            <motion.div
+              key={phase.num}
+              className="relative border-l border-black pl-8"
+              style={{ paddingBottom: i < phases.length - 1 ? "2.5rem" : 0 }}
+              variants={fadeUp}
+              initial="hidden"
+              animate={inView ? "visible" : "hidden"}
+              custom={i + 2}
+            >
+              {/* Dot */}
+              <div className="absolute -left-[5px] top-0 h-2.5 w-2.5 rounded-full bg-black" />
+
+              <span className="font-body text-sm font-light" style={{ color: "#6E6E6E" }}>
+                {phase.num}
+              </span>
+              <h3 className="mt-2 font-body text-lg font-semibold tracking-tight text-black">
+                {phase.title}
+              </h3>
+              <p className="mt-2 font-body text-sm leading-relaxed" style={{ color: "#2B2B2B" }}>
+                {phase.description}
+              </p>
             </motion.div>
           ))}
         </div>
 
+        {/* Tech keywords */}
         <motion.p
           className="mt-16 text-center font-body text-xs font-medium uppercase tracking-[0.2em]"
           style={{ color: "#6E6E6E" }}
           variants={fadeUp}
           initial="hidden"
           animate={inView ? "visible" : "hidden"}
-          custom={4}
+          custom={5}
         >
           Machine Learning &middot; Business Intelligence &middot; Ciberseguridad
         </motion.p>

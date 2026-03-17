@@ -35,7 +35,7 @@ const servicios = [
     num: "04",
     title: "Consultoría basada en datos",
     description:
-      "Análisis de mercado inmobiliario con inteligencia artificial y Business Intelligence.",
+      "Modelos de análisis que procesan variables de mercado de forma continua para generar reportes e insights bajo demanda.",
   },
 ];
 

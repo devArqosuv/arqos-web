@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { socialLinks } from "@/components/ui/SocialIcons";
 
 export function Footer() {
   return (
@@ -12,6 +13,26 @@ export function Footer() {
           height={366}
           className="h-9 w-auto"
         />
+
+        {/* Social icons */}
+        <div className="mt-8 flex items-center gap-6">
+          {socialLinks.map((s) => {
+            const Icon = s.icon;
+            return (
+              <a
+                key={s.label}
+                href={s.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={s.label}
+                className="transition-colors hover:text-white"
+                style={{ color: "#6E6E6E" }}
+              >
+                <Icon />
+              </a>
+            );
+          })}
+        </div>
 
         {/* Copyright */}
         <p

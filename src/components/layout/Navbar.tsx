@@ -18,6 +18,11 @@ export function Navbar() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
+    const isHome = window.location.pathname === "/";
+    if (!isHome) {
+      setVisible(true);
+      return;
+    }
     const threshold = () => window.innerHeight * 0.8;
     const onScroll = () => setVisible(window.scrollY > threshold());
     onScroll();

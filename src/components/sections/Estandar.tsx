@@ -16,17 +16,17 @@ const items = [
   {
     headline: "Cero retrabajo.",
     description:
-      "Cada dictamen se valida contra normativa SHF antes del envío. Aceptación en primer intento.",
+      "Cada dictamen pasa por validación automatizada contra normativa SHF antes del envío. Nuestro sistema detecta inconsistencias para que el valuador las corrija antes de que salgan.",
   },
   {
     headline: "IA que trabaja.",
     description:
-      "Agentes de inteligencia artificial seleccionan comparables y detectan inconsistencias antes que el ojo humano.",
+      "Procesos autónomos analizan comparables, cruzan fuentes de mercado y señalan anomalías. El valuador recibe un expediente enriquecido, no una hoja en blanco.",
   },
   {
     headline: "Datos como infraestructura.",
     description:
-      "Base propia de comparables inmobiliarios. No dependemos de terceros para generar inteligencia de mercado.",
+      "Una base de datos viva que se alimenta con cada operación. Modelos que aprenden del mercado en tiempo real para generar inteligencia accionable.",
   },
   {
     headline: "Más allá del hipotecario.",
