@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"/c/Program Files/nodejs/npx.cmd\" pnpm:*)",
+      "Bash(mkdir:*)",
+      "Bash(pkill:*)",
+      "Bash(node:*)",
+      "Bash(mv:*)"
+    ]
+  }
+}
