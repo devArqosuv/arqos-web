@@ -18,7 +18,7 @@ const fadeUp = {
 const contactData = [
   { icon: MapPin, text: "Querétaro, Querétaro, México" },
   { icon: Mail, text: "contacto@arqos.mx", href: "mailto:contacto@arqos.mx" },
-  { icon: Phone, text: "+52 442 000 0000", href: "tel:+524420000000" },
+  { icon: Phone, text: "+52 442 122 1774", href: "tel:+524421221774" },
 ];
 
 const inputClasses =
