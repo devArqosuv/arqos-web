@@ -16,7 +16,7 @@ const fadeUp = {
 };
 
 const contactData = [
-  { icon: MapPin, text: "Querétaro, Querétaro, México" },
+  { icon: MapPin, text: "High Park Oficina 15H · Lic. Manuel Gómez Morin 3960, Centro Sur, 76090 Querétaro, Qro." },
   { icon: Mail, text: "contacto@arqos.mx", href: "mailto:contacto@arqos.mx" },
   { icon: Phone, text: "+52 442 122 1774", href: "tel:+524421221774" },
 ];
