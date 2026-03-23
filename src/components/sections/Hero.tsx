@@ -137,13 +137,13 @@ export function Hero() {
   return (
     <section
       ref={containerRef}
-      className="relative flex min-h-screen flex-col items-center justify-center bg-white px-6 overflow-hidden"
+      className="relative flex min-h-screen flex-col items-center justify-center bg-white px-6 overflow-hidden isolate"
     >
       {/* Particle canvas background */}
       <canvas
         ref={canvasRef}
         className="pointer-events-none absolute inset-0 w-full h-full"
-        style={{ zIndex: 0 }}
+        style={{ zIndex: 0, willChange: 'transform', isolation: 'isolate' }}
       />
 
       <div className="relative z-10 flex flex-col items-center text-center">

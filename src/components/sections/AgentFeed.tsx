@@ -272,7 +272,7 @@ export function AgentFeed() {
   };
 
   return (
-    <section id="agentfeed" className="bg-[#000000] py-24 md:py-32 px-6 md:px-12">
+    <section id="agentfeed" className="bg-[#000000] pt-20 pb-16 px-6 md:px-12">
       <div className="mx-auto max-w-4xl">
         {/* Label */}
         <p className="font-body text-[10px] uppercase tracking-[.2em] text-[#6E6E6E]">
