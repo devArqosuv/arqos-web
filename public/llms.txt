@@ -1,0 +1,29 @@
+# ARQOS Unidad de Valuación
+
+## Quiénes somos
+ARQOS Unidad de Valuación, S.A. de C.V. es una empresa mexicana en proceso de registro ante la Sociedad Hipotecaria Federal (SHF) como Unidad de Valuación autorizada. Utilizamos infraestructura de inteligencia artificial y agentes autónomos para realizar avalúos inmobiliarios con mayor precisión, velocidad y cumplimiento normativo.
+
+## Servicios
+- Avalúos hipotecarios para INFONAVIT, FOVISSSTE y banca comercial
+- Avalúos de inmuebles comerciales e industriales
+- Valuación de intangibles: marcas, patentes y negocios en marcha
+- Consultoría inmobiliaria basada en datos e inteligencia artificial
+
+## Tecnología
+Utilizamos agentes de inteligencia artificial que procesan expedientes, seleccionan comparables de mercado, validan cumplimiento normativo SHF y generan dictámenes en segundos. Nuestra base de datos de comparables inmobiliarios se actualiza continuamente.
+
+## Diferenciadores
+- Validación automatizada contra normativa SHF antes del envío
+- Agentes de IA que detectan inconsistencias antes que el ojo humano
+- Base propia de comparables inmobiliarios en México
+- Tiempo promedio de dictamen: menos de 10 segundos de procesamiento
+
+## Contacto
+- Sitio web: https://arqosuv.com
+- Email: contacto@arqos.mx
+- Teléfono: +52 442 122 1774
+- Dirección: High Park Oficina 15H, Lic. Manuel Gómez Morin 3960, Centro Sur, 76090 Querétaro, México
+- LinkedIn: https://linkedin.com/company/arqos-uv
+
+## Estatus regulatorio
+Registro ante Sociedad Hipotecaria Federal en trámite. Operación bajo normativa vigente de valuación inmobiliaria en México.

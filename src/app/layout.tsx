@@ -18,39 +18,78 @@ const montserrat = Montserrat({
   display: "swap",
 });
 
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "ProfessionalService",
+  "name": "ARQOS Unidad de Valuación",
+  "description": "Unidad de Valuación registrada ante la Sociedad Hipotecaria Federal con infraestructura de inteligencia artificial para avalúos hipotecarios, comerciales e industriales en México.",
+  "url": "https://arqosuv.com",
+  "logo": "https://arqosuv.com/images/logo-arqos-black.png",
+  "telephone": "+524421221774",
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": "Lic. Manuel Gómez Morin 3960, High Park Oficina 15H, Centro Sur",
+    "addressLocality": "Santiago de Querétaro",
+    "addressRegion": "Querétaro",
+    "postalCode": "76090",
+    "addressCountry": "MX"
+  },
+  "areaServed": {
+    "@type": "Country",
+    "name": "México"
+  },
+  "serviceType": [
+    "Avalúos hipotecarios INFONAVIT",
+    "Avalúos hipotecarios FOVISSSTE",
+    "Avalúos para banca comercial",
+    "Valuación de inmuebles comerciales",
+    "Valuación de naves industriales",
+    "Valuación de intangibles",
+    "Consultoría inmobiliaria con inteligencia artificial"
+  ],
+  "knowsAbout": [
+    "Valuación inmobiliaria",
+    "Inteligencia artificial aplicada a valuación",
+    "Normativa SHF",
+    "Avalúos hipotecarios México",
+    "Sistema Maestro de Avalúos"
+  ],
+  "sameAs": [
+    "https://linkedin.com/company/arqos-uv",
+    "https://instagram.com/arqos.uv"
+  ]
+};
+
 export const metadata: Metadata = {
-  title: "ARQOS — Unidad de Valuación",
+  title: "ARQOS UV | Unidad de Valuación con Inteligencia Artificial en México",
   description:
-    "Unidad de Valuación con infraestructura de datos e inteligencia artificial para el sector hipotecario en México. Avalúos certificados, consultoría y tecnología.",
+    "Unidad de Valuación registrada ante SHF. Avalúos hipotecarios para INFONAVIT, FOVISSSTE y banca comercial con agentes de inteligencia artificial. Querétaro, México.",
   keywords: [
-    "valuación",
-    "avalúos",
-    "hipotecario",
-    "INFONAVIT",
-    "FOVISSSTE",
-    "SHF",
-    "inteligencia artificial",
-    "México",
-    "Querétaro",
-    "ARQOS",
+    "unidad de valuación México",
+    "avalúos hipotecarios INFONAVIT",
+    "valuación inmobiliaria IA",
+    "SHF unidad de valuación",
+    "avalúos FOVISSSTE",
+    "valuación inteligencia artificial México",
+    "ARQOS valuación",
   ],
   authors: [{ name: "ARQOS" }],
   openGraph: {
-    title: "ARQOS — Unidad de Valuación",
+    title: "ARQOS — La Unidad de Valuación con IA más avanzada de México",
     description:
-      "Unidad de Valuación con infraestructura de datos e inteligencia artificial para el sector hipotecario en México.",
-    url: "https://arqos.mx",
+      "Unidad de Valuación registrada ante SHF. Avalúos hipotecarios para INFONAVIT, FOVISSSTE y banca comercial con agentes de inteligencia artificial. Querétaro, México.",
+    url: "https://arqosuv.com",
     siteName: "ARQOS",
     locale: "es_MX",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "ARQOS — Unidad de Valuación",
+    title: "ARQOS — La Unidad de Valuación con IA más avanzada de México",
     description:
-      "Unidad de Valuación con infraestructura de datos e inteligencia artificial para el sector hipotecario en México.",
+      "Unidad de Valuación registrada ante SHF. Avalúos hipotecarios para INFONAVIT, FOVISSSTE y banca comercial con agentes de inteligencia artificial. Querétaro, México.",
   },
-  metadataBase: new URL("https://arqos.mx"),
+  metadataBase: new URL("https://arqosuv.com"),
 };
 
 export default function RootLayout({
@@ -60,6 +99,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </head>
       <body
         className={`${playfair.variable} ${montserrat.variable} antialiased`}
       >
