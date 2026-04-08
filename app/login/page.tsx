@@ -3,17 +3,15 @@
 import Image from 'next/image';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('123456'); // <-- Estado para la contraseña
+  const [password, setPassword] = useState('123456');
   const router = useRouter();
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault(); 
     
-    // Ahora sí verificamos que la contraseña sea correcta
     if (password !== '123456') {
       alert('Contraseña incorrecta, xd. La de prueba es 123456');
       return;
@@ -26,7 +24,7 @@ export default function LoginPage() {
     } else if (email === 'controladores@prueba.com') {
       router.push('/dashboard/controlador');
     } else {
-      alert('Correo no válido para la simulación. Usa admin@prueba.com, evaluadores@prueba.com o controladores@prueba.com');
+      alert('Correo no válido. Usa admin@prueba.com, valuadores@prueba.com o controladores@prueba.com');
     }
   };
 
@@ -58,34 +56,30 @@ export default function LoginPage() {
               <label htmlFor="email" className="text-sm font-bold text-slate-950 uppercase tracking-wide">
                 EMAIL
               </label>
-              <div className="relative">
-                <input 
-                  type="email" 
-                  id="email" 
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  placeholder="nombre@arqos.com" 
-                  className="w-full px-4 py-4 bg-[#F3F4F6] rounded-xl text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-slate-900 focus:bg-white outline-none"
-                />
-              </div>
+              <input 
+                type="email" 
+                id="email" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                placeholder="nombre@arqos.com" 
+                className="w-full px-4 py-4 bg-[#F3F4F6] rounded-xl text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-slate-900 focus:bg-white outline-none"
+              />
             </div>
 
             <div className="space-y-3">
               <label htmlFor="password" className="text-sm font-bold text-slate-950 uppercase tracking-wide">
                 PASSWORD
               </label>
-              <div className="relative">
-                <input 
-                  type="password" 
-                  id="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)} // <-- Conectado al estado
-                  required
-                  placeholder="••••••••" 
-                  className="w-full px-4 py-4 bg-[#F3F4F6] rounded-xl text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-slate-900 focus:bg-white outline-none"
-                />
-              </div>
+              <input 
+                type="password" 
+                id="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="••••••••" 
+                className="w-full px-4 py-4 bg-[#F3F4F6] rounded-xl text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-slate-900 focus:bg-white outline-none"
+              />
             </div>
 
             <button type="submit" className="w-full py-4 bg-[#0F172A] hover:bg-[#1E293B] text-white rounded-xl font-bold transition">

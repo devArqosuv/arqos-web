@@ -64,7 +64,7 @@ export default function AdminDashboard() {
             <nav className="flex gap-6 text-sm h-full items-center">
               <span className="font-bold border-b-2 border-slate-900 h-full flex items-center pt-[2px]">Admin</span>
               <Link href="/dashboard/controlador?admin=true" className="text-slate-400 font-semibold hover:text-slate-900 transition">Controladores</Link>
-              <Link href="/dashboard/evaluador?admin=true" className="text-slate-400 font-semibold hover:text-slate-900 transition">Valuador</Link>
+              <Link href="/dashboard/evaluador?admin=true" className="text-slate-400 font-semibold hover:text-slate-900 transition">Valuadores</Link>
             </nav>
           </div>
           <div className="flex items-center gap-6">
@@ -117,7 +117,7 @@ export default function AdminDashboard() {
                           <span className="text-slate-900 font-bold">María Rodríguez</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4">Evaluador Jr.</td>
+                      <td className="px-6 py-4">Valuador Jr.</td>
                       <td className="px-6 py-4">MX-MTY</td>
                       <td className="px-6 py-4"><span className="bg-green-100 text-green-700 px-2 py-1 rounded-md text-[10px] font-bold uppercase">En línea</span></td>
                     </tr>
@@ -128,7 +128,7 @@ export default function AdminDashboard() {
                           <span className="text-slate-900 font-bold">Jorge Peña</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4">Evaluador Sr.</td>
+                      <td className="px-6 py-4">Valuador Sr.</td>
                       <td className="px-6 py-4">MX-GDL</td>
                       <td className="px-6 py-4"><span className="bg-slate-100 text-slate-500 px-2 py-1 rounded-md text-[10px] font-bold uppercase">Inactivo</span></td>
                     </tr>
