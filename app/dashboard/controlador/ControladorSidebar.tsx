@@ -2,8 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { Suspense } from 'react';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 
 const NAV_ITEMS = [
   { href: '/dashboard/controlador',             label: 'PANEL PRINCIPAL' },
@@ -35,11 +34,8 @@ const ICONS: Record<string, React.ReactNode> = {
   ),
 };
 
-function ControladorSidebarInner() {
+export default function ControladorSidebar() {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const isAdmin = searchParams.get('admin') === 'true';
-  const adminParam = isAdmin ? '?admin=true' : '';
 
   return (
     <aside className="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 h-screen">
@@ -50,7 +46,7 @@ function ControladorSidebarInner() {
           </div>
           <div>
             <h2 className="font-bold text-sm tracking-tight text-slate-900">Autoridad ARQOS</h2>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Valuación Institucional</p>
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Unidad de Valuación</p>
           </div>
         </div>
 
@@ -60,7 +56,7 @@ function ControladorSidebarInner() {
             return (
               <Link
                 key={item.href}
-                href={item.href + adminParam}
+                href={item.href}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition ${
                   isActive
                     ? 'bg-slate-100 text-slate-900 font-bold border-l-4 border-slate-900'
@@ -82,21 +78,15 @@ function ControladorSidebarInner() {
           </svg>
           AYUDA
         </a>
-        <Link href="/login" className="flex items-center gap-3 px-4 py-2 text-slate-500 text-xs font-semibold hover:bg-slate-50 rounded-lg">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
-          CERRAR SESIÓN
-        </Link>
+        <form action="/auth/signout" method="post">
+          <button type="submit" className="w-full flex items-center gap-3 px-4 py-2 text-slate-500 text-xs font-semibold hover:bg-slate-50 rounded-lg">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            CERRAR SESIÓN
+          </button>
+        </form>
       </div>
     </aside>
-  );
-}
-
-export default function ControladorSidebar() {
-  return (
-    <Suspense fallback={<aside className="w-64 bg-white border-r border-slate-200 shrink-0 h-screen" />}>
-      <ControladorSidebarInner />
-    </Suspense>
   );
 }

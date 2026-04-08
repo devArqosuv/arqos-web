@@ -4,6 +4,30 @@
 
 export type RolUsuario = 'administrador' | 'evaluador' | 'controlador'
 export type EstadoAvaluo = 'solicitud' | 'captura' | 'revision' | 'aprobado' | 'rechazado'
+
+// ── Catálogo de bancos ─────────────────────────────────────
+export interface Banco {
+  id: string
+  nombre: string
+  logo_url: string | null
+  color_hex: string | null
+  activo: boolean
+  orden: number
+}
+
+export interface BancoDocumento {
+  id: string
+  banco_id: string
+  nombre: string
+  descripcion: string | null
+  obligatorio: boolean
+  orden: number
+}
+
+export interface BancoConDocumentos extends Banco {
+  banco_documentos: BancoDocumento[]
+}
+
 export type TipoInmueble =
   | 'casa'
   | 'departamento'
@@ -78,6 +102,8 @@ export interface Avaluo {
 export interface CrearAvaluoPayload {
   // Tipo de avalúo (1.0 o 2.0 — se guarda en notas como metadato)
   tipo_avaluo: '1.0' | '2.0'
+  // Banco (solo si tipo_avaluo === '2.0'; null cuando es modo libre "otro")
+  banco_id?: string | null
   // Dirección extraída por la IA
   calle: string
   numero_ext?: string

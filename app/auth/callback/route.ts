@@ -17,9 +17,11 @@ export async function GET(request: NextRequest) {
         cookies: {
           getAll() { return cookieStore.getAll() },
           setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
+            cookiesToSet.forEach(({ name, value, options }) => {
+              // Cookie de sesión: sin maxAge ni expires → se borra al cerrar el navegador
+              const sessionOptions = { ...options, maxAge: undefined, expires: undefined }
+              cookieStore.set(name, value, sessionOptions)
+            })
           },
         },
       }

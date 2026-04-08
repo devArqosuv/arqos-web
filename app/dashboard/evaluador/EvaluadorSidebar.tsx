@@ -3,7 +3,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
 
 const NAV_ITEMS = [
   { href: '/dashboard/evaluador/inicio',       label: 'PANEL PRINCIPAL' },
@@ -25,15 +24,6 @@ const ICONS: Record<string, React.ReactNode> = {
 
 export default function EvaluadorSidebar() {
   const pathname = usePathname();
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminParam, setAdminParam] = useState('');
-
-  useEffect(() => {
-    // Leer admin mode de localStorage — sin tocar URL ni useSearchParams
-    const admin = localStorage.getItem('arqos_admin_mode') === 'true';
-    setIsAdmin(admin);
-    setAdminParam(admin ? '?admin=true' : '');
-  }, []);
 
   return (
     <aside className="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 h-screen">
@@ -44,7 +34,7 @@ export default function EvaluadorSidebar() {
           </div>
           <div>
             <h2 className="font-bold text-sm tracking-tight text-slate-900">Autoridad ARQOS</h2>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Valuación Institucional</p>
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Unidad de Valuación</p>
           </div>
         </div>
 
@@ -54,7 +44,7 @@ export default function EvaluadorSidebar() {
             return (
               <Link
                 key={item.href}
-                href={item.href + adminParam}
+                href={item.href}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-semibold transition ${
                   isActive
                     ? 'bg-slate-100 text-slate-900 font-bold border-l-4 border-slate-900'
@@ -71,7 +61,7 @@ export default function EvaluadorSidebar() {
 
       <div className="p-4 space-y-4">
         <Link
-          href={`/dashboard/evaluador${adminParam}`}
+          href="/dashboard/evaluador"
           className="w-full bg-[#0F172A] hover:bg-[#1E293B] text-white py-3 rounded-lg font-bold text-sm tracking-wide flex items-center justify-center gap-2 transition"
         >
           <span>+</span> Nuevo Avalúo
@@ -81,13 +71,15 @@ export default function EvaluadorSidebar() {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
             AYUDA
           </a>
-          <button
-            onClick={() => { localStorage.removeItem('arqos_admin_mode'); window.location.href = '/login'; }}
-            className="w-full flex items-center gap-3 px-4 py-2 text-slate-500 text-xs font-semibold hover:bg-slate-50 rounded-lg"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-            CERRAR SESIÓN
-          </button>
+          <form action="/auth/signout" method="post">
+            <button
+              type="submit"
+              className="w-full flex items-center gap-3 px-4 py-2 text-slate-500 text-xs font-semibold hover:bg-slate-50 rounded-lg"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+              CERRAR SESIÓN
+            </button>
+          </form>
         </div>
       </div>
     </aside>

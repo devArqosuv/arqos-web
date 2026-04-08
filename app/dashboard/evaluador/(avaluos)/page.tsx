@@ -2,14 +2,36 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { guardarAvaluo } from '@/util/supabase/actions';
+import { createClient } from '@/util/supabase/client';
 import EvaluadorTopbar from '../EvaluadorTopbar';
 
 // ── Tipos ──
 type TipoAvaluo = '1.0' | '2.0' | '';
+// BancoId: id de la tabla `bancos` (dinámico) o 'otro' para modo libre
+type BancoId = string;
+const BANCO_OTRO = 'otro' as const;
 
 interface DocumentoRequerido {
   id: string;
   nombre: string;
+}
+
+interface DocCustom {
+  id: string;
+  nombre: string;
+  file: File | null;
+}
+
+interface BancoRemoto {
+  id: string;
+  nombre: string;
+  orden: number;
+  banco_documentos: {
+    id: string;
+    nombre: string;
+    orden: number;
+    obligatorio: boolean;
+  }[];
 }
 
 interface ResultadoDocumento {
@@ -34,19 +56,11 @@ interface ResultadoAnalisis {
   };
 }
 
-const DOCS_POR_TIPO: Record<'1.0' | '2.0', DocumentoRequerido[]> = {
-  '1.0': [
-    { id: '1.1', nombre: 'Título de Propiedad' },
-    { id: '1.2', nombre: 'Boleta Predial / Cédula Catastral' },
-    { id: '1.3', nombre: 'Identificación Oficial' },
-  ],
-  '2.0': [
-    { id: '2.1', nombre: 'Escritura Completa' },
-    { id: '2.2', nombre: 'Boleta Predial / Cédula Catastral' },
-    { id: '2.3', nombre: 'Comprobante de Agua / Factibilidad' },
-    { id: '2.4', nombre: 'Identificación Oficial' },
-  ],
-};
+const DOCS_TIPO_1: DocumentoRequerido[] = [
+  { id: '1.1', nombre: 'Título de Propiedad' },
+  { id: '1.2', nombre: 'Boleta Predial / Cédula Catastral' },
+  { id: '1.3', nombre: 'Identificación Oficial' },
+];
 
 // Ícono PDF
 function IconPDF() {
@@ -66,13 +80,50 @@ export default function EvaluadorDashboard() {
   // ── Estado del panel de IA ──
   const [tipoAvaluo, setTipoAvaluo] = useState<TipoAvaluo>('');
   const [tipoDropdownAbierto, setTipoDropdownAbierto] = useState(false);
+  const [bancos, setBancos] = useState<BancoRemoto[]>([]);
+  const [bancosCargando, setBancosCargando] = useState(false);
+  const [bancoSeleccionado, setBancoSeleccionado] = useState<BancoId>('');
+  const [bancoDropdownAbierto, setBancoDropdownAbierto] = useState(false);
   const [archivosSlots, setArchivosSlots] = useState<Record<string, File | null>>({});
+  const [docsCustom, setDocsCustom] = useState<DocCustom[]>([]);
   const [analizando, setAnalizando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoAnalisis | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [guardadoResult, setGuardadoResult] = useState<{ exito: boolean; folio?: string; error?: string } | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const tipoDropdownRef = useRef<HTMLDivElement>(null);
+  const bancoDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Cargar bancos desde Supabase al montar
+  useEffect(() => {
+    let cancelado = false;
+    async function cargarBancos() {
+      setBancosCargando(true);
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('bancos')
+        .select('id, nombre, orden, banco_documentos(id, nombre, orden, obligatorio)')
+        .eq('activo', true)
+        .order('orden', { ascending: true });
+
+      if (cancelado) return;
+
+      if (error) {
+        console.error('Error cargando bancos:', error);
+        setBancos([]);
+      } else {
+        // Ordenar documentos por `orden` dentro de cada banco
+        const bancosOrdenados = (data as BancoRemoto[] | null)?.map((b) => ({
+          ...b,
+          banco_documentos: [...(b.banco_documentos || [])].sort((a, b) => a.orden - b.orden),
+        })) ?? [];
+        setBancos(bancosOrdenados);
+      }
+      setBancosCargando(false);
+    }
+    cargarBancos();
+    return () => { cancelado = true; };
+  }, []);
 
   // Cerrar dropdown al hacer clic fuera
   useEffect(() => {
@@ -86,19 +137,83 @@ export default function EvaluadorDashboard() {
     return () => document.removeEventListener('mousedown', handler);
   }, [tipoDropdownAbierto]);
 
-  const docsRequeridos = tipoAvaluo ? DOCS_POR_TIPO[tipoAvaluo] : [];
-  const archivosSubidos = docsRequeridos.filter((d) => archivosSlots[d.id]).length;
-  const todosSubidos = docsRequeridos.length > 0 && archivosSubidos === docsRequeridos.length;
+  useEffect(() => {
+    if (!bancoDropdownAbierto) return;
+    const handler = (e: MouseEvent) => {
+      if (bancoDropdownRef.current && !bancoDropdownRef.current.contains(e.target as Node)) {
+        setBancoDropdownAbierto(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [bancoDropdownAbierto]);
+
+  const esModoCustom = tipoAvaluo === '2.0' && bancoSeleccionado === BANCO_OTRO;
+
+  const bancoActual = bancos.find((b) => b.id === bancoSeleccionado);
+
+  const docsRequeridos: DocumentoRequerido[] =
+    tipoAvaluo === '1.0'
+      ? DOCS_TIPO_1
+      : tipoAvaluo === '2.0' && bancoActual
+      ? bancoActual.banco_documentos.map((d) => ({ id: d.id, nombre: d.nombre }))
+      : [];
+
+  const archivosSubidos = esModoCustom
+    ? docsCustom.filter((d) => d.file && d.nombre.trim()).length
+    : docsRequeridos.filter((d) => archivosSlots[d.id]).length;
+  const totalDocs = esModoCustom ? docsCustom.length : docsRequeridos.length;
+  const todosSubidos = esModoCustom
+    ? docsCustom.length > 0 && docsCustom.every((d) => d.file && d.nombre.trim())
+    : docsRequeridos.length > 0 && archivosSubidos === docsRequeridos.length;
+
+  const mostrarPasoDocumentos =
+    tipoAvaluo === '1.0' || (tipoAvaluo === '2.0' && bancoSeleccionado !== '');
 
   const handleTipoChange = (tipo: TipoAvaluo) => {
     setTipoAvaluo(tipo);
+    setBancoSeleccionado('');
     setArchivosSlots({});
+    setDocsCustom([]);
+    setResultado(null);
+    setGuardadoResult(null);
+  };
+
+  const handleBancoChange = (banco: BancoId) => {
+    setBancoSeleccionado(banco);
+    setArchivosSlots({});
+    setDocsCustom([]);
     setResultado(null);
     setGuardadoResult(null);
   };
 
   const handleFileSlot = (id: string, file: File | null) => {
     setArchivosSlots((prev) => ({ ...prev, [id]: file }));
+    setResultado(null);
+    setGuardadoResult(null);
+  };
+
+  const agregarDocCustom = () => {
+    setDocsCustom((prev) => [
+      ...prev,
+      { id: `custom-${Date.now()}-${prev.length}`, nombre: '', file: null },
+    ]);
+  };
+
+  const actualizarDocCustomNombre = (id: string, nombre: string) => {
+    setDocsCustom((prev) => prev.map((d) => (d.id === id ? { ...d, nombre } : d)));
+    setResultado(null);
+    setGuardadoResult(null);
+  };
+
+  const actualizarDocCustomFile = (id: string, file: File | null) => {
+    setDocsCustom((prev) => prev.map((d) => (d.id === id ? { ...d, file } : d)));
+    setResultado(null);
+    setGuardadoResult(null);
+  };
+
+  const eliminarDocCustom = (id: string) => {
+    setDocsCustom((prev) => prev.filter((d) => d.id !== id));
     setResultado(null);
     setGuardadoResult(null);
   };
@@ -110,13 +225,22 @@ export default function EvaluadorDashboard() {
 
     const formData = new FormData();
     formData.append('tipoAvaluo', tipoAvaluo);
-    docsRequeridos.forEach((doc) => {
-      const file = archivosSlots[doc.id];
-      if (file) {
-        formData.append('pdfs', file);
-        formData.append('docIds', doc.id);
-        formData.append('docNombres', doc.nombre);
-      }
+    if (tipoAvaluo === '2.0' && bancoSeleccionado) {
+      formData.append('banco', bancoSeleccionado);
+    }
+
+    const docsParaEnviar: { id: string; nombre: string; file: File }[] = esModoCustom
+      ? docsCustom
+          .filter((d): d is DocCustom & { file: File } => !!d.file && !!d.nombre.trim())
+          .map((d) => ({ id: d.id, nombre: d.nombre.trim(), file: d.file }))
+      : docsRequeridos
+          .map((doc) => ({ id: doc.id, nombre: doc.nombre, file: archivosSlots[doc.id] }))
+          .filter((d): d is { id: string; nombre: string; file: File } => !!d.file);
+
+    docsParaEnviar.forEach((doc) => {
+      formData.append('pdfs', doc.file);
+      formData.append('docIds', doc.id);
+      formData.append('docNombres', doc.nombre);
     });
 
     try {
@@ -150,6 +274,9 @@ export default function EvaluadorDashboard() {
 
     const payload = {
       tipo_avaluo: tipoAvaluo as '1.0' | '2.0',
+      banco_id: tipoAvaluo === '2.0' && bancoSeleccionado && bancoSeleccionado !== BANCO_OTRO
+        ? bancoSeleccionado
+        : null,
       calle: partesDir[0] || 'Sin especificar',
       colonia: partesDir[1] || undefined,
       municipio: partesDir[2] || 'Sin especificar',
@@ -163,9 +290,13 @@ export default function EvaluadorDashboard() {
       moneda: 'MXN',
     };
 
-    const archivos = docsRequeridos
-      .filter((doc) => archivosSlots[doc.id])
-      .map((doc) => ({ docId: doc.id, docNombre: doc.nombre, file: archivosSlots[doc.id]! }));
+    const archivos = esModoCustom
+      ? docsCustom
+          .filter((d): d is DocCustom & { file: File } => !!d.file && !!d.nombre.trim())
+          .map((d) => ({ docId: d.id, docNombre: d.nombre.trim(), file: d.file }))
+      : docsRequeridos
+          .filter((doc) => archivosSlots[doc.id])
+          .map((doc) => ({ docId: doc.id, docNombre: doc.nombre, file: archivosSlots[doc.id]! }));
 
     const res = await guardarAvaluo(payload, archivos);
     setGuardadoResult(res);
@@ -174,7 +305,9 @@ export default function EvaluadorDashboard() {
 
   const limpiarTodo = () => {
     setTipoAvaluo('');
+    setBancoSeleccionado('');
     setArchivosSlots({});
+    setDocsCustom([]);
     setResultado(null);
     setValorBase('');
     setNotasRiesgo('');
@@ -288,11 +421,96 @@ export default function EvaluadorDashboard() {
                         </div>
                       )}
                     </div>
+
+                    {/* Selector de banco (solo Crédito Bancario) */}
+                    {tipoAvaluo === '2.0' && (
+                      <div className="mt-4 pt-4 border-t border-slate-100">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                          Selecciona tu banco
+                        </p>
+                        <div className="relative" ref={bancoDropdownRef}>
+                          <button
+                            type="button"
+                            onClick={() => setBancoDropdownAbierto((v) => !v)}
+                            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all text-left ${
+                              bancoSeleccionado
+                                ? 'border-[#0F172A] bg-slate-50'
+                                : 'border-slate-100 hover:border-slate-300 bg-white'
+                            }`}
+                          >
+                            <span className={`text-sm font-semibold ${bancoSeleccionado ? 'text-slate-700' : 'text-slate-400'}`}>
+                              {bancoSeleccionado === BANCO_OTRO
+                                ? '¿No encuentras tu banco?'
+                                : bancoActual
+                                ? bancoActual.nombre
+                                : bancosCargando
+                                ? 'Cargando bancos…'
+                                : 'Seleccionar banco'}
+                            </span>
+                            <svg
+                              className={`w-4 h-4 text-slate-400 transition-transform ${bancoDropdownAbierto ? 'rotate-180' : ''}`}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+
+                          {bancoDropdownAbierto && (
+                            <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-slate-100 rounded-xl shadow-lg overflow-hidden z-20">
+                              {bancosCargando ? (
+                                <div className="px-4 py-3 text-xs font-semibold text-slate-400">
+                                  Cargando bancos…
+                                </div>
+                              ) : bancos.length === 0 ? (
+                                <div className="px-4 py-3 text-xs font-semibold text-slate-400">
+                                  No hay bancos registrados
+                                </div>
+                              ) : (
+                                bancos.map((b, i) => (
+                                  <button
+                                    key={b.id}
+                                    type="button"
+                                    onClick={() => { handleBancoChange(b.id); setBancoDropdownAbierto(false); }}
+                                    className={`w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition ${i > 0 ? 'border-t border-slate-100' : ''} ${bancoSeleccionado === b.id ? 'bg-slate-50' : ''}`}
+                                  >
+                                    <span className="text-sm font-semibold text-slate-700">
+                                      {b.nombre}
+                                    </span>
+                                    {bancoSeleccionado === b.id && (
+                                      <div className="w-5 h-5 rounded-full bg-[#0F172A] flex items-center justify-center shrink-0">
+                                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                      </div>
+                                    )}
+                                  </button>
+                                ))
+                              )}
+                              {/* Opción fija: modo libre */}
+                              <button
+                                type="button"
+                                onClick={() => { handleBancoChange(BANCO_OTRO); setBancoDropdownAbierto(false); }}
+                                className={`w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition border-t border-slate-100 ${bancoSeleccionado === BANCO_OTRO ? 'bg-slate-50' : ''}`}
+                              >
+                                <span className="text-sm font-semibold italic text-slate-500">
+                                  ¿No encuentras tu banco?
+                                </span>
+                                {bancoSeleccionado === BANCO_OTRO && (
+                                  <div className="w-5 h-5 rounded-full bg-[#0F172A] flex items-center justify-center shrink-0">
+                                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                  </div>
+                                )}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* STEP 2: Documentos */}
-                {tipoAvaluo && (
+                {mostrarPasoDocumentos && (
                   <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                     <div className="p-5">
                       <div className="flex items-center justify-between mb-4">
@@ -301,81 +519,169 @@ export default function EvaluadorDashboard() {
                           <h2 className="font-bold text-slate-900 text-sm">Documentos del Expediente</h2>
                         </div>
                         <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-full">
-                          {archivosSubidos}/{docsRequeridos.length}
+                          {archivosSubidos}/{totalDocs || '—'}
                         </span>
                       </div>
 
-                      <div className="space-y-2">
-                        {docsRequeridos.map((doc) => {
-                          const archivoActual = archivosSlots[doc.id];
-                          const docRes = resultado?.documentos.find((d) => d.id === doc.id);
-
-                          return (
-                            <div
-                              key={doc.id}
-                              className={`flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all ${
-                                docRes
-                                  ? docRes.valido
-                                    ? 'border-emerald-200 bg-emerald-50'
-                                    : 'border-red-200 bg-red-50'
-                                  : archivoActual
-                                  ? 'border-slate-200 bg-slate-50'
-                                  : 'border-slate-100 bg-white'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0">
+                      {esModoCustom ? (
+                        <div className="space-y-2">
+                          {docsCustom.length === 0 && (
+                            <div className="py-6 text-center border-2 border-dashed border-slate-200 rounded-xl">
+                              <p className="text-xs text-slate-400 font-semibold">
+                                Sube los documentos que necesites para este avalúo
+                              </p>
+                            </div>
+                          )}
+                          {docsCustom.map((doc) => {
+                            const docRes = resultado?.documentos.find((d) => d.id === doc.id);
+                            return (
+                              <div
+                                key={doc.id}
+                                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all ${
+                                  docRes
+                                    ? docRes.valido
+                                      ? 'border-emerald-200 bg-emerald-50'
+                                      : 'border-red-200 bg-red-50'
+                                    : doc.file
+                                    ? 'border-slate-200 bg-slate-50'
+                                    : 'border-slate-100 bg-white'
+                                }`}
+                              >
                                 <IconPDF />
-                                <div className="min-w-0">
-                                  <p className="text-xs font-bold text-slate-800 truncate">{doc.nombre}</p>
-                                  {archivoActual && (
-                                    <p className="text-[10px] text-slate-400 truncate">{archivoActual.name}</p>
+                                <div className="flex-1 min-w-0">
+                                  <input
+                                    type="text"
+                                    value={doc.nombre}
+                                    onChange={(e) => actualizarDocCustomNombre(doc.id, e.target.value)}
+                                    placeholder="Nombre del documento"
+                                    className="w-full text-xs font-bold text-slate-800 bg-transparent border-none outline-none placeholder:text-slate-400 placeholder:font-semibold"
+                                  />
+                                  {doc.file && (
+                                    <p className="text-[10px] text-slate-400 truncate">{doc.file.name}</p>
                                   )}
                                   {docRes && !docRes.valido && docRes.errores[0] && (
                                     <p className="text-[10px] text-red-500 font-semibold truncate">⚠ {docRes.errores[0]}</p>
                                   )}
                                 </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <input
+                                    type="file"
+                                    accept="application/pdf"
+                                    className="hidden"
+                                    ref={(el) => { fileInputRefs.current[doc.id] = el; }}
+                                    onChange={(e) => actualizarDocCustomFile(doc.id, e.target.files?.[0] || null)}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => fileInputRefs.current[doc.id]?.click()}
+                                    className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition whitespace-nowrap ${
+                                      doc.file
+                                        ? 'text-slate-600 border border-slate-300 hover:bg-slate-100'
+                                        : 'text-blue-600 border border-blue-200 hover:bg-blue-50'
+                                    }`}
+                                  >
+                                    {doc.file ? 'Cambiar' : 'Subir PDF'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => eliminarDocCustom(doc.id)}
+                                    className="text-slate-400 hover:text-red-500 transition p-1"
+                                    aria-label="Eliminar documento"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                  </button>
+                                </div>
                               </div>
+                            );
+                          })}
+                          <button
+                            type="button"
+                            onClick={agregarDocCustom}
+                            className="w-full flex items-center justify-center gap-2 text-xs font-bold text-slate-600 border-2 border-dashed border-slate-200 hover:border-slate-400 hover:bg-slate-50 rounded-xl py-3 transition"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
+                            Agregar documento
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {docsRequeridos.map((doc) => {
+                            const archivoActual = archivosSlots[doc.id];
+                            const docRes = resultado?.documentos.find((d) => d.id === doc.id);
 
-                              <div className="flex items-center gap-2 shrink-0">
-                                {docRes?.valido && (
-                                  <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                                )}
-                                <input
-                                  type="file"
-                                  accept="application/pdf"
-                                  className="hidden"
-                                  ref={(el) => { fileInputRefs.current[doc.id] = el; }}
-                                  onChange={(e) => handleFileSlot(doc.id, e.target.files?.[0] || null)}
-                                />
-                                <button
-                                  onClick={() => fileInputRefs.current[doc.id]?.click()}
-                                  className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition whitespace-nowrap ${
-                                    archivoActual
-                                      ? 'text-slate-600 border border-slate-300 hover:bg-slate-100'
-                                      : 'text-blue-600 border border-blue-200 hover:bg-blue-50'
-                                  }`}
-                                >
-                                  {archivoActual ? 'Cambiar' : 'Subir PDF'}
-                                </button>
+                            return (
+                              <div
+                                key={doc.id}
+                                className={`flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all ${
+                                  docRes
+                                    ? docRes.valido
+                                      ? 'border-emerald-200 bg-emerald-50'
+                                      : 'border-red-200 bg-red-50'
+                                    : archivoActual
+                                    ? 'border-slate-200 bg-slate-50'
+                                    : 'border-slate-100 bg-white'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <IconPDF />
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-bold text-slate-800 truncate">{doc.nombre}</p>
+                                    {archivoActual && (
+                                      <p className="text-[10px] text-slate-400 truncate">{archivoActual.name}</p>
+                                    )}
+                                    {docRes && !docRes.valido && docRes.errores[0] && (
+                                      <p className="text-[10px] text-red-500 font-semibold truncate">⚠ {docRes.errores[0]}</p>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {docRes?.valido && (
+                                    <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                                  )}
+                                  <input
+                                    type="file"
+                                    accept="application/pdf"
+                                    className="hidden"
+                                    ref={(el) => { fileInputRefs.current[doc.id] = el; }}
+                                    onChange={(e) => handleFileSlot(doc.id, e.target.files?.[0] || null)}
+                                  />
+                                  <button
+                                    onClick={() => fileInputRefs.current[doc.id]?.click()}
+                                    className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition whitespace-nowrap ${
+                                      archivoActual
+                                        ? 'text-slate-600 border border-slate-300 hover:bg-slate-100'
+                                        : 'text-blue-600 border border-blue-200 hover:bg-blue-50'
+                                    }`}
+                                  >
+                                    {archivoActual ? 'Cambiar' : 'Subir PDF'}
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                            );
+                          })}
+                        </div>
+                      )}
 
                       {/* Barra de progreso */}
                       <div className="mt-4 h-1 bg-slate-100 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-[#0F172A] rounded-full transition-all duration-500"
-                          style={{ width: `${docsRequeridos.length > 0 ? (archivosSubidos / docsRequeridos.length) * 100 : 0}%` }}
+                          style={{ width: `${totalDocs > 0 ? (archivosSubidos / totalDocs) * 100 : 0}%` }}
                         />
                       </div>
 
-                      {/* Botón validar */}
+                      {/* Botón validar con IA */}
                       <button
                         onClick={handleAnalizarAvaluo}
                         disabled={!todosSubidos || analizando}
-                        className="mt-4 w-full bg-[#0F172A] hover:bg-slate-700 disabled:bg-slate-100 disabled:text-slate-400 text-white text-xs font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 tracking-wider"
+                        className={`mt-4 w-full text-xs font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 tracking-wider ${
+                          todosSubidos && !analizando
+                            ? 'bg-gradient-to-r from-[#0F172A] to-[#1E40AF] hover:from-[#1E293B] hover:to-[#1D4ED8] text-white shadow-md hover:shadow-lg'
+                            : analizando
+                            ? 'bg-[#0F172A] text-white'
+                            : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                        }`}
                       >
                         {analizando ? (
                           <>
@@ -383,12 +689,19 @@ export default function EvaluadorDashboard() {
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                             </svg>
-                            VALIDANDO CON IA...
+                            ANALIZANDO CON IA…
                           </>
                         ) : todosSubidos ? (
-                          'VALIDAR EXPEDIENTE'
+                          <>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
+                            </svg>
+                            ANALIZAR CON IA
+                          </>
+                        ) : esModoCustom && docsCustom.length === 0 ? (
+                          'AGREGA AL MENOS UN DOCUMENTO'
                         ) : (
-                          `FALTAN ${docsRequeridos.length - archivosSubidos} DOCUMENTO(S)`
+                          `FALTAN ${totalDocs - archivosSubidos} DOCUMENTO(S)`
                         )}
                       </button>
                     </div>

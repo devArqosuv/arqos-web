@@ -59,6 +59,7 @@ export async function guardarAvaluo(
       superficie_construccion: payload.superficie_construccion || null,
       valor_estimado:          valorNumerico,
       moneda:                  payload.moneda || 'MXN',
+      banco_id:                payload.banco_id || null,
       estado:                  'captura',           // Empieza en captura al guardarse
       valuador_id:             user.id,             // El evaluador actual es el valuador
       solicitante_id:          user.id,
