@@ -1,14 +1,13 @@
 import Image from 'next/image';
 import Link from 'next/link';
 
-// Recibimos searchParams para ver si trae el ?admin=true
 export default async function ControladorDashboard({ searchParams }: any) {
   const params = await searchParams;
-  const isAdmin = params?.admin === 'true'; // Verificamos si tiene el pase VIP
+  const isAdmin = params?.admin === 'true';
 
   return (
     <div className="flex h-screen bg-[#F8FAFC] font-sans text-slate-900">
-      
+
       {/* SIDEBAR */}
       <aside className="w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0">
         <div>
@@ -65,12 +64,10 @@ export default async function ControladorDashboard({ searchParams }: any) {
 
       {/* CONTENIDO PRINCIPAL */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
-        
+
         <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0">
           <div className="flex items-center gap-8">
             <h1 className="font-extrabold text-lg tracking-tight uppercase">ARQOS</h1>
-            
-            {/* LÓGICA DE LA NAVEGACIÓN */}
             <nav className="flex gap-6 text-sm h-full items-center">
               {isAdmin ? (
                 <>
@@ -79,21 +76,18 @@ export default async function ControladorDashboard({ searchParams }: any) {
                   <Link href="/dashboard/evaluador?admin=true" className="text-slate-400 font-semibold hover:text-slate-900 transition">Evaluador</Link>
                 </>
               ) : (
-                <>
-                  <span className="font-bold border-b-2 border-slate-900 h-full flex items-center pt-[2px]">Control</span>
-                </>
+                <span className="font-bold border-b-2 border-slate-900 h-full flex items-center pt-[2px]">Control</span>
               )}
             </nav>
           </div>
-          
+
           <div className="flex items-center gap-6">
             <div className="w-8 h-8 rounded-full overflow-hidden">
-               {/* Lógica del Avatar */}
-               {isAdmin ? (
-                 <div className="w-full h-full bg-slate-200 flex items-center justify-center text-slate-900 text-xs font-bold">AP</div>
-               ) : (
-                 <div className="w-full h-full bg-teal-700 flex items-center justify-center text-white text-xs font-bold">C</div>
-               )}
+              {isAdmin ? (
+                <div className="w-full h-full bg-slate-200 flex items-center justify-center text-slate-900 text-xs font-bold">AP</div>
+              ) : (
+                <div className="w-full h-full bg-teal-700 flex items-center justify-center text-white text-xs font-bold">C</div>
+              )}
             </div>
           </div>
         </header>
@@ -107,31 +101,93 @@ export default async function ControladorDashboard({ searchParams }: any) {
               </div>
             </div>
 
+            {/* MÉTRICAS */}
+            <div className="grid grid-cols-3 gap-4 mb-8">
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-2">Flujos Activos</p>
+                <p className="text-4xl font-extrabold text-slate-900">12</p>
+                <p className="text-xs text-slate-400 mt-1">↑ 3 desde ayer</p>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-2">Aprobaciones Pendientes</p>
+                <p className="text-4xl font-extrabold text-amber-500">5</p>
+                <p className="text-xs text-slate-400 mt-1">Requieren revisión</p>
+              </div>
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                <p className="text-[10px] font-bold text-slate-400 tracking-widest uppercase mb-2">Completados Este Mes</p>
+                <p className="text-4xl font-extrabold text-emerald-600">38</p>
+                <p className="text-xs text-slate-400 mt-1">Meta: 40</p>
+              </div>
+            </div>
+
+            {/* TABLA */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-extrabold text-slate-900">Procesos de Valuación Activos</h3>
+                <button className="text-xs font-bold text-slate-500 hover:text-slate-900 transition">Ver todos →</button>
               </div>
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   <tr>
                     <th className="px-4 py-3 rounded-l-lg">Identidad del Activo</th>
                     <th className="px-4 py-3">Progreso</th>
+                    <th className="px-4 py-3">Evaluador</th>
                     <th className="px-4 py-3 text-right rounded-r-lg">Estado</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   <tr className="hover:bg-slate-50 transition">
                     <td className="px-4 py-4">
-                      <div>
-                        <p className="font-bold text-slate-900">Plaza Lexington III</p>
-                        <p className="text-[10px] font-semibold text-slate-400">ID Activo: AR-7721-X</p>
+                      <p className="font-bold text-slate-900">Plaza Lexington III</p>
+                      <p className="text-[10px] font-semibold text-slate-400">ID Activo: AR-7721-X</p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-slate-900 rounded-full" style={{ width: '85%' }}></div>
+                        </div>
+                        <span className="text-xs font-bold text-slate-900 w-8">85%</span>
                       </div>
                     </td>
-                    <td className="px-4 py-4 w-48">
-                      <span className="text-xs font-bold text-slate-900">85%</span>
-                    </td>
+                    <td className="px-4 py-4 text-xs text-slate-500 font-semibold">M. Rodríguez</td>
                     <td className="px-4 py-4 text-right">
-                      <span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest inline-block">A Tiempo</span>
+                      <span className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest">A Tiempo</span>
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-slate-50 transition">
+                    <td className="px-4 py-4">
+                      <p className="font-bold text-slate-900">Torre Corporativa Reforma</p>
+                      <p className="text-[10px] font-semibold text-slate-400">ID Activo: AR-8834-B</p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-amber-400 rounded-full" style={{ width: '42%' }}></div>
+                        </div>
+                        <span className="text-xs font-bold text-slate-900 w-8">42%</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-xs text-slate-500 font-semibold">J. Peña</td>
+                    <td className="px-4 py-4 text-right">
+                      <span className="bg-amber-50 text-amber-600 border border-amber-100 px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest">En Riesgo</span>
+                    </td>
+                  </tr>
+                  <tr className="hover:bg-slate-50 transition">
+                    <td className="px-4 py-4">
+                      <p className="font-bold text-slate-900">Parque Industrial Norte</p>
+                      <p className="text-[10px] font-semibold text-slate-400">ID Activo: AR-9012-C</p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-slate-900 rounded-full" style={{ width: '100%' }}></div>
+                        </div>
+                        <span className="text-xs font-bold text-slate-900 w-8">100%</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-xs text-slate-500 font-semibold">A. Ledesma</td>
+                    <td className="px-4 py-4 text-right">
+                      <span className="bg-slate-100 text-slate-500 border border-slate-200 px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest">Pend. Aprobación</span>
                     </td>
                   </tr>
                 </tbody>
