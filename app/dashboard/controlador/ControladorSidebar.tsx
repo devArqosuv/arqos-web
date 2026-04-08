@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 
 const NAV_ITEMS = [
@@ -34,7 +35,7 @@ const ICONS: Record<string, React.ReactNode> = {
   ),
 };
 
-export default function ControladorSidebar() {
+function ControladorSidebarInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const isAdmin = searchParams.get('admin') === 'true';
@@ -89,5 +90,13 @@ export default function ControladorSidebar() {
         </Link>
       </div>
     </aside>
+  );
+}
+
+export default function ControladorSidebar() {
+  return (
+    <Suspense fallback={<aside className="w-64 bg-white border-r border-slate-200 shrink-0 h-screen" />}>
+      <ControladorSidebarInner />
+    </Suspense>
   );
 }

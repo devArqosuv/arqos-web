@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/util/supabase/client';
 import EvaluadorTopbar from '../EvaluadorTopbar';
@@ -16,7 +16,7 @@ const ESTADO_CONFIG: Record<string, { label: string; color: string; bg: string }
 
 const ESTADOS = ['todos', 'captura', 'revision', 'aprobado', 'rechazado'];
 
-export default function ExpedientesPage() {
+function ExpedientesPageInner() {
   const searchParams = useSearchParams();
   const estadoFiltro = searchParams.get('estado') || 'todos';
 
@@ -202,5 +202,13 @@ export default function ExpedientesPage() {
           </div>
         </div>
       </main>
+  );
+}
+
+export default function ExpedientesPage() {
+  return (
+    <Suspense fallback={<main className="flex-1 flex flex-col overflow-hidden" />}>
+      <ExpedientesPageInner />
+    </Suspense>
   );
 }

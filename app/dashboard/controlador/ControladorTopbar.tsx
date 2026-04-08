@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
-export default function ControladorTopbar() {
+function ControladorTopbarInner() {
   const searchParams = useSearchParams();
   const isAdmin = searchParams.get('admin') === 'true';
 
@@ -31,5 +32,13 @@ export default function ControladorTopbar() {
         )}
       </div>
     </header>
+  );
+}
+
+export default function ControladorTopbar() {
+  return (
+    <Suspense fallback={<header className="h-16 bg-white border-b border-slate-200 shrink-0" />}>
+      <ControladorTopbarInner />
+    </Suspense>
   );
 }
