@@ -70,6 +70,14 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Server actions: el default es 1 MB, lo subimos al máximo del plan Hobby
+  // de Vercel (4.5 MB). Si necesitas subir más, hay que pasar a Pro o
+  // refactorizar a uploads directos al Storage de Supabase con signed URLs.
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '4mb',
+    },
+  },
   async headers() {
     return [
       {
