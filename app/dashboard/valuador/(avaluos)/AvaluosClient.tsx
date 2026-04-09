@@ -302,6 +302,26 @@ export default function AvaluosClient() {
     setGuardadoResult(null);
   };
 
+  // Drag & drop reorder de docsCustom (HTML5 nativo, sin librería)
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  const reordenarDocCustom = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+    setDocsCustom((prev) => {
+      const sourceIdx = prev.findIndex((d) => d.id === sourceId);
+      const targetIdx = prev.findIndex((d) => d.id === targetId);
+      if (sourceIdx === -1 || targetIdx === -1) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(sourceIdx, 1);
+      next.splice(targetIdx, 0, moved);
+      return next;
+    });
+    // Reordenar invalida el resultado de la IA porque las posiciones cambiaron
+    setResultado(null);
+    setGuardadoResult(null);
+  };
+
   const handleAnalizarAvaluo = async () => {
     if (!todosSubidos || !tipoAvaluo) return;
     setAnalizando(true);
@@ -732,11 +752,47 @@ export default function AvaluosClient() {
                         )}
                         {docsCustom.map((doc) => {
                           const docRes = resultado?.documentos?.find((d) => d.id === doc.id);
+                          const arrastrandoEste = dragId === doc.id;
+                          const dragOverEste = dragOverId === doc.id && dragId !== doc.id;
                           return (
                             <div
                               key={doc.id}
-                              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all ${
-                                docRes
+                              draggable
+                              onDragStart={(e) => {
+                                setDragId(doc.id);
+                                e.dataTransfer.effectAllowed = 'move';
+                                // Necesario en Firefox para que el drag arranque
+                                e.dataTransfer.setData('text/plain', doc.id);
+                              }}
+                              onDragEnter={() => setDragOverId(doc.id)}
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                e.dataTransfer.dropEffect = 'move';
+                              }}
+                              onDragLeave={(e) => {
+                                // Solo quitar el highlight si el cursor sale del card completo,
+                                // no cuando entra a un hijo
+                                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                                  setDragOverId((curr) => (curr === doc.id ? null : curr));
+                                }
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                const sourceId = e.dataTransfer.getData('text/plain') || dragId;
+                                if (sourceId) reordenarDocCustom(sourceId, doc.id);
+                                setDragId(null);
+                                setDragOverId(null);
+                              }}
+                              onDragEnd={() => {
+                                setDragId(null);
+                                setDragOverId(null);
+                              }}
+                              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all cursor-move ${
+                                arrastrandoEste
+                                  ? 'opacity-40 border-blue-300 bg-blue-50'
+                                  : dragOverEste
+                                  ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-200'
+                                  : docRes
                                   ? docRes.valido
                                     ? 'border-emerald-200 bg-emerald-50'
                                     : 'border-red-200 bg-red-50'
@@ -745,6 +801,12 @@ export default function AvaluosClient() {
                                   : 'border-slate-100 bg-white'
                               }`}
                             >
+                              {/* Drag handle visual (6 puntos verticales) */}
+                              <div className="text-slate-300 hover:text-slate-500 transition shrink-0" aria-label="Arrastrar para reordenar">
+                                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
+                                  <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zM15 4a1 1 0 11-2 0 1 1 0 012 0zM15 10a1 1 0 11-2 0 1 1 0 012 0zM15 16a1 1 0 11-2 0 1 1 0 012 0z" />
+                                </svg>
+                              </div>
                               <IconPDF />
                               <div className="flex-1 min-w-0">
                                 <input
