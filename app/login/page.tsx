@@ -52,7 +52,7 @@ function LoginPageInner() {
       ? '/dashboard/admin'
       : rol === 'controlador'
       ? '/dashboard/controlador'
-      : '/dashboard/evaluador';
+      : '/dashboard/valuador';
 
     router.push(destino);
     router.refresh();

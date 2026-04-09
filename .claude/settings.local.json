@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(npx tsc:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(npm ls:*)",
+      "Bash(git mv:*)",
+      "Bash(grep -l \"fn_crear_perfil_usuario\\\\|on_auth_user_created\\\\|perfiles\" supabase/migrations/*.sql)"
     ]
   }
 }

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { guardarAvaluo } from '@/util/supabase/actions';
 import { createClient } from '@/util/supabase/client';
-import EvaluadorTopbar from '../EvaluadorTopbar';
+import ValuadorTopbar from '../ValuadorTopbar';
 
 // ── Tipos ──
 type TipoAvaluo = '1.0' | '2.0' | '';
@@ -89,7 +89,7 @@ function IconPDF() {
   );
 }
 
-export default function EvaluadorDashboard() {
+export default function AvaluosClient() {
   // ── Estado del formulario ──
   const [valorBase, setValorBase] = useState('');
   const [notasRiesgo, setNotasRiesgo] = useState('');
@@ -113,6 +113,12 @@ export default function EvaluadorDashboard() {
   const [resultado, setResultado] = useState<ResultadoAnalisis | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [guardadoResult, setGuardadoResult] = useState<{ exito: boolean; folio?: string; error?: string } | null>(null);
+
+  // Override manual del valuador: cuando la IA bloquea pero el valuador
+  // tiene contexto adicional y quiere seguir adelante bajo su responsabilidad.
+  // El motivo se persiste en `notas` del avalúo para auditoría posterior.
+  const [validacionManual, setValidacionManual] = useState(false);
+  const [motivoOverride, setMotivoOverride] = useState('');
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const tipoDropdownRef = useRef<HTMLDivElement>(null);
   const bancoDropdownRef = useRef<HTMLDivElement>(null);
@@ -206,8 +212,13 @@ export default function EvaluadorDashboard() {
   // - No → mostramos input para subir imagen de uso de suelo
   const ubicacionDetectada = resultado?.datos_consolidados?.ubicacion ?? null;
   const inmuebleEnQro = esEnQueretaro(ubicacionDetectada);
+
+  // Validación efectiva: pasa la IA o el valuador hizo override manual.
+  // Esta es la única flag que las demás partes del UI deben consultar.
+  const validacionAprobada = resultado?.valido === true || validacionManual;
+
   const usoSueloListo =
-    !resultado?.valido
+    !validacionAprobada
       ? true                                                  // todavía no aplica
       : inmuebleEnQro
       ? !!usoSueloSeleccionado                                // requiere selección del catálogo
@@ -290,6 +301,9 @@ export default function EvaluadorDashboard() {
     if (!todosSubidos || !tipoAvaluo) return;
     setAnalizando(true);
     setResultado(null);
+    // Limpiar cualquier override manual previo: un nuevo análisis es punto cero.
+    setValidacionManual(false);
+    setMotivoOverride('');
 
     const formData = new FormData();
     formData.append('tipoAvaluo', tipoAvaluo);
@@ -332,7 +346,7 @@ export default function EvaluadorDashboard() {
   };
 
   const handleGuardar = async () => {
-    if (!resultado?.valido || !tipoAvaluo) return;
+    if (!validacionAprobada || !tipoAvaluo || !resultado) return;
     setGuardando(true);
     setGuardadoResult(null);
 
@@ -365,7 +379,16 @@ export default function EvaluadorDashboard() {
       propietario_nombre: datos.propietario || undefined,
       clave_catastral: datos.clave_catastral || undefined,
       superficie_terreno: datos.superficie ? Number(datos.superficie.replace(/[^0-9.]/g, '')) : undefined,
-      notas: notasRiesgo || datos.observaciones || undefined,
+      notas: [
+        // Si fue override manual, dejarlo PRIMERO y bien visible para el controlador
+        validacionManual
+          ? `[VALIDACIÓN MANUAL DEL VALUADOR — IA bloqueó el expediente]\nMotivo: ${motivoOverride.trim()}\nErrores que reportó la IA:\n${(resultado?.errores_bloqueantes ?? []).map((e) => `  • ${e}`).join('\n')}`
+          : null,
+        notasRiesgo || null,
+        datos.observaciones || null,
+      ]
+        .filter(Boolean)
+        .join('\n\n') || undefined,
       moneda: 'MXN',
       uso_suelo: usoSueloPayload,
       uso_suelo_auto: usoSueloAuto,
@@ -406,12 +429,15 @@ export default function EvaluadorDashboard() {
     setValorBase('');
     setNotasRiesgo('');
     setGuardadoResult(null);
+    setValidacionManual(false);
+    setMotivoOverride('');
     resetUsoSuelo();
   };
 
   // Estado del badge
   const badgeEstado = () => {
     if (guardadoResult?.exito) return { label: 'Guardado', color: 'bg-emerald-500' };
+    if (validacionManual) return { label: '⚠ OVERRIDE MANUAL', color: 'bg-red-600 animate-pulse' };
     if (resultado?.valido) return { label: 'En Proceso', color: 'bg-blue-500' };
     if (resultado && !resultado.valido) return { label: 'Bloqueado', color: 'bg-red-500' };
     if (tipoAvaluo) return { label: 'Pendiente', color: 'bg-amber-400' };
@@ -422,7 +448,7 @@ export default function EvaluadorDashboard() {
   return (
       <main className="flex-1 flex flex-col overflow-hidden">
 
-        <EvaluadorTopbar paginaActiva="Avalúos" />
+        <ValuadorTopbar paginaActiva="Avalúos" />
 
         {/* BODY */}
         <div className="flex-1 overflow-y-auto">
@@ -811,7 +837,86 @@ export default function EvaluadorDashboard() {
                       </div>
                     )}
 
-                    {/* Éxito de validación */}
+                    {/* Override manual del valuador (solo si la IA bloqueó y aún no se anuló) */}
+                    {resultado && !resultado.valido && !validacionManual && (
+                      <div className="border-t-4 border-dashed border-red-300 bg-gradient-to-br from-red-50 to-orange-50 px-5 py-5">
+                        <div className="flex items-start gap-3 mb-3">
+                          <div className="bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center shrink-0 shadow-lg shadow-red-300">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                            </svg>
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-xs font-black text-red-700 uppercase tracking-widest leading-tight">
+                              Anular validación de la IA
+                            </p>
+                            <p className="text-[11px] text-red-600/90 leading-snug mt-1">
+                              Esta acción <span className="font-black underline">no es estándar</span>. Solo úsala si tienes
+                              contexto verificable que la IA no puede ver. <span className="font-black">Tu nombre, motivo
+                              y los errores que reportó la IA quedarán registrados permanentemente</span> en el expediente
+                              y serán visibles para el controlador.
+                            </p>
+                          </div>
+                        </div>
+                        <textarea
+                          value={motivoOverride}
+                          onChange={(e) => setMotivoOverride(e.target.value)}
+                          placeholder="Explica con detalle por qué el expediente es válido a pesar de los errores que la IA reportó. Ej: 'Verifiqué con el cliente que es la misma persona — los apellidos están en distinto orden en el Título y en la Boleta Predial.'"
+                          className="w-full text-xs text-slate-800 bg-white border-2 border-red-300 rounded-lg px-3 py-2.5 placeholder:text-red-300 focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-red-500 min-h-[80px] resize-none font-medium"
+                        />
+                        <div className="flex items-center justify-between mt-3 gap-3">
+                          <p className={`text-[10px] font-black uppercase tracking-widest ${
+                            motivoOverride.trim().length >= 20 ? 'text-red-600' : 'text-red-300'
+                          }`}>
+                            {motivoOverride.trim().length}/20 caracteres mínimos
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setValidacionManual(true)}
+                            disabled={motivoOverride.trim().length < 20}
+                            className="bg-red-600 hover:bg-red-700 disabled:bg-red-200 disabled:text-red-400 text-white text-[10px] font-black uppercase tracking-widest px-5 py-2.5 rounded-lg transition shrink-0 shadow-lg shadow-red-300/50 disabled:shadow-none border-2 border-red-700 disabled:border-red-200"
+                          >
+                            ⚠ DAR LUZ VERDE
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Banner: validación manual activa — visualmente RUIDOSO para que sea obvio */}
+                    {validacionManual && (
+                      <div className="border-t-4 border-double border-red-500 bg-red-600 px-5 py-4">
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div className="flex items-center gap-2">
+                            <svg className="w-5 h-5 text-white animate-pulse" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M12 2L1 21h22L12 2zm0 6l7.53 13H4.47L12 8zm-1 4v4h2v-4h-2zm0 6v2h2v-2h-2z" />
+                            </svg>
+                            <p className="text-[11px] font-black text-white uppercase tracking-widest">
+                              OVERRIDE MANUAL ACTIVO
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => { setValidacionManual(false); setMotivoOverride(''); }}
+                            className="text-[9px] font-black text-white/90 hover:text-white bg-red-800 hover:bg-red-900 border border-red-900 px-2.5 py-1 rounded uppercase tracking-widest shrink-0"
+                          >
+                            Anular
+                          </button>
+                        </div>
+                        <div className="bg-red-50 border-2 border-red-300 border-dashed rounded-lg p-3">
+                          <p className="text-[9px] font-black text-red-700 uppercase tracking-widest mb-1">
+                            Motivo del valuador
+                          </p>
+                          <p className="text-[11px] text-red-900 leading-snug whitespace-pre-wrap break-words font-semibold">
+                            {motivoOverride}
+                          </p>
+                        </div>
+                        <p className="text-[9px] text-white/80 font-bold mt-2 text-center uppercase tracking-widest">
+                          Este expediente quedará marcado en el registro
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Éxito de validación de la IA (sin override) */}
                     {resultado?.valido && (
                       <div className="border-t border-emerald-100 bg-emerald-50 px-5 py-3">
                         <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">✓ Expediente válido — datos autocompletados</p>
@@ -823,7 +928,11 @@ export default function EvaluadorDashboard() {
 
               {/* ── COL 2: Card del Inmueble ── */}
               <div className="space-y-4">
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className={`bg-white rounded-2xl shadow-sm overflow-hidden transition ${
+                  validacionManual
+                    ? 'border-4 border-dashed border-red-500 shadow-red-200/50 ring-4 ring-red-100'
+                    : 'border border-slate-200'
+                }`}>
 
                   {/* Hero inmueble */}
                   <div className="relative h-52 bg-gradient-to-br from-slate-800 to-slate-950 flex items-end p-5">
@@ -1075,8 +1184,12 @@ export default function EvaluadorDashboard() {
                 {/* Botón guardar */}
                 <button
                   onClick={handleGuardar}
-                  disabled={!resultado?.valido || guardando || guardadoResult?.exito === true || !usoSueloListo}
-                  className="w-full bg-[#0F172A] hover:bg-slate-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-black text-xs py-4 rounded-2xl transition flex items-center justify-center gap-2 tracking-widest shadow-lg shadow-slate-900/20"
+                  disabled={!validacionAprobada || guardando || guardadoResult?.exito === true || !usoSueloListo}
+                  className={`w-full disabled:bg-slate-200 disabled:text-slate-400 text-white font-black text-xs py-4 rounded-2xl transition flex items-center justify-center gap-2 tracking-widest shadow-lg ${
+                    validacionManual
+                      ? 'bg-red-600 hover:bg-red-700 shadow-red-300/50 border-2 border-red-700'
+                      : 'bg-[#0F172A] hover:bg-slate-700 shadow-slate-900/20'
+                  }`}
                 >
                   {guardando ? (
                     <>
@@ -1091,7 +1204,7 @@ export default function EvaluadorDashboard() {
                   ) : (
                     <>
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
-                      GUARDAR VALUACIÓN
+                      {validacionManual ? '⚠ GUARDAR CON OVERRIDE' : 'GUARDAR VALUACIÓN'}
                     </>
                   )}
                 </button>

@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
           ? '/dashboard/admin'
           : rol === 'controlador'
           ? '/dashboard/controlador'
-          : '/dashboard/evaluador'
+          : '/dashboard/valuador'
 
         return NextResponse.redirect(new URL(destino, origin))
       }

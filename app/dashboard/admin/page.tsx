@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { redirect } from 'next/navigation';
 import { createClient } from '@/util/supabase/server';
+import { requireRole } from '@/util/supabase/dal';
 import AdminDashboardClient from './AdminDashboardClient';
 
 function iniciales(nombre: string, apellidos: string | null) {
@@ -11,22 +11,10 @@ function iniciales(nombre: string, apellidos: string | null) {
 }
 
 export default async function AdminDashboard() {
+  // Gate: requiere rol administrador. Redirige al dashboard correcto si no.
+  const { user, perfil: perfilActual } = await requireRole(['administrador']);
+
   const supabase = await createClient();
-
-  // Verificar sesión y rol
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
-
-  const { data: perfilActual } = await supabase
-    .from('perfiles')
-    .select('nombre, apellidos, email, rol')
-    .eq('id', user.id)
-    .single();
-
-  if (perfilActual?.rol !== 'administrador') {
-    if (perfilActual?.rol === 'controlador') redirect('/dashboard/controlador');
-    redirect('/dashboard/evaluador');
-  }
 
   // Listar todos los usuarios institucionales
   const { data: usuariosRaw } = await supabase
@@ -98,7 +86,7 @@ export default async function AdminDashboard() {
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
               CONTROLADORES
             </Link>
-            <Link href="/dashboard/evaluador" className="flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 font-semibold rounded-lg text-sm">
+            <Link href="/dashboard/valuador" className="flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 font-semibold rounded-lg text-sm">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
               VALUADOR
             </Link>
@@ -122,7 +110,7 @@ export default async function AdminDashboard() {
             <nav className="flex gap-6 text-sm h-full items-center">
               <span className="font-bold border-b-2 border-slate-900 h-full flex items-center pt-[2px]">Admin</span>
               <Link href="/dashboard/controlador" className="text-slate-400 font-semibold hover:text-slate-900 transition">Controladores</Link>
-              <Link href="/dashboard/evaluador" className="text-slate-400 font-semibold hover:text-slate-900 transition">Valuador</Link>
+              <Link href="/dashboard/valuador" className="text-slate-400 font-semibold hover:text-slate-900 transition">Valuador</Link>
             </nav>
           </div>
           <div className="flex items-center gap-3 border-l border-slate-200 pl-6">

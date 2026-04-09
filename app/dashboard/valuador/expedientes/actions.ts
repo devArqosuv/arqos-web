@@ -80,8 +80,8 @@ export async function agendarVisitaAction(
       return { exito: false, mensaje: rpcData?.mensaje || rpcError?.message || 'No se pudo cambiar el estado.' };
     }
 
-    revalidatePath(`/dashboard/evaluador/expedientes/${avaluoId}`);
-    revalidatePath('/dashboard/evaluador/expedientes');
+    revalidatePath(`/dashboard/valuador/expedientes/${avaluoId}`);
+    revalidatePath('/dashboard/valuador/expedientes');
 
     return { exito: true, mensaje: 'Visita agendada correctamente.' };
   } catch (e) {
@@ -201,8 +201,8 @@ export async function subirFotosVisitaAction(formData: FormData): Promise<Result
       return { exito: false, mensaje: rpcData?.mensaje || rpcError?.message || 'No se pudo cambiar el estado.' };
     }
 
-    revalidatePath(`/dashboard/evaluador/expedientes/${avaluoId}`);
-    revalidatePath('/dashboard/evaluador/expedientes');
+    revalidatePath(`/dashboard/valuador/expedientes/${avaluoId}`);
+    revalidatePath('/dashboard/valuador/expedientes');
 
     return { exito: true, mensaje: 'Visita registrada y 11 fotografías subidas correctamente.' };
   } catch (e) {
@@ -274,7 +274,7 @@ export async function ajustarYEnviarRevisionAction(
       return { exito: false, mensaje: rpcData?.mensaje || rpcError?.message || 'No se pudo cambiar el estado.' };
     }
 
-    revalidatePath(`/dashboard/evaluador/expedientes/${avaluoId}`);
+    revalidatePath(`/dashboard/valuador/expedientes/${avaluoId}`);
     revalidatePath(`/dashboard/controlador/expedientes/${avaluoId}`);
 
     return { exito: true, mensaje: 'Valor enviado al controlador para revisión final.' };

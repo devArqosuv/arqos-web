@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/util/supabase/client';
-import EvaluadorTopbar from '../EvaluadorTopbar';
+import ValuadorTopbar from '../ValuadorTopbar';
 
 const TIPO_ICON: Record<string, string> = {
   casa: '🏠', departamento: '🏢', local_comercial: '🏪',
@@ -50,7 +50,7 @@ export default function InmueblesPage() {
 
 
       <main className="flex-1 flex flex-col overflow-hidden">
-        <EvaluadorTopbar paginaActiva="Inmuebles" />
+        <ValuadorTopbar paginaActiva="Inmuebles" />
 
         <div className="flex-1 overflow-y-auto p-6">
           <div className="max-w-6xl mx-auto space-y-5">

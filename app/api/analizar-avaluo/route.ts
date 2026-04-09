@@ -224,7 +224,7 @@ Responde ÚNICAMENTE con un objeto JSON válido, sin markdown, sin backticks, si
 
 REGLAS CRÍTICAS DE SALIDA:
 - "valido" en el objeto raíz es false SOLO si hay al menos un ERROR BLOQUEANTE (documento inválido, nombre distinto, o inmuebles claramente diferentes). Las ADVERTENCIAS no bloquean el expediente.
-- "errores_bloqueantes" debe ser explícito: menciona los valores en conflicto para que el evaluador sepa qué corregir. Array vacío si no hay errores bloqueantes.
+- "errores_bloqueantes" debe ser explícito: menciona los valores en conflicto para que el valuador sepa qué corregir. Array vacío si no hay errores bloqueantes.
 - Las advertencias (ej. diferencia de superficie menor) van en "datos_consolidados.observaciones", NO en errores_bloqueantes.
 - Si un documento está en blanco, corrupto o no corresponde al tipo indicado, es un error bloqueante.
 - "datos_consolidados" solo se llena con datos confirmados y consistentes. Si hay conflicto, pon null en ese campo.

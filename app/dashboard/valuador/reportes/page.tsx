@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/util/supabase/client';
-import EvaluadorTopbar from '../EvaluadorTopbar';
+import ValuadorTopbar from '../ValuadorTopbar';
 
 export default function ReportesPage() {
   const [avaluos, setAvaluos] = useState<any[]>([]);
@@ -41,7 +41,7 @@ export default function ReportesPage() {
 
 
       <main className="flex-1 flex flex-col overflow-hidden">
-        <EvaluadorTopbar paginaActiva="Reportes" />
+        <ValuadorTopbar paginaActiva="Reportes" />
 
         <div className="flex-1 overflow-y-auto p-6">
           <div className="max-w-4xl mx-auto space-y-5">

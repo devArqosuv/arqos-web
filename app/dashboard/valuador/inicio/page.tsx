@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import EvaluadorTopbar from '../EvaluadorTopbar';
+import ValuadorTopbar from '../ValuadorTopbar';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/util/supabase/client';
 
@@ -22,7 +22,7 @@ const ESTADO_CONFIG: Record<string, { label: string; color: string; bg: string }
   rechazado:  { label: 'Rechazado',  color: 'text-red-600',    bg: 'bg-red-50 border-red-200' },
 };
 
-export default function EvaluadorInicio() {
+export default function ValuadorInicio() {
   const [metricas, setMetricas] = useState<Metricas | null>(null);
   const [cargando, setCargando] = useState(true);
 
@@ -57,7 +57,7 @@ export default function EvaluadorInicio() {
 
 
       <main className="flex-1 flex flex-col overflow-hidden">
-        <EvaluadorTopbar paginaActiva="Valuaciones" />
+        <ValuadorTopbar paginaActiva="Valuaciones" />
 
         <div className="flex-1 overflow-y-auto p-6">
           <div className="max-w-5xl mx-auto space-y-6">
@@ -94,7 +94,7 @@ export default function EvaluadorInicio() {
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                 <h2 className="font-bold text-slate-900 text-sm">Avalúos Recientes</h2>
-                <Link href="/dashboard/evaluador/expedientes" className="text-[10px] font-bold text-slate-400 hover:text-slate-900 transition uppercase tracking-widest">
+                <Link href="/dashboard/valuador/expedientes" className="text-[10px] font-bold text-slate-400 hover:text-slate-900 transition uppercase tracking-widest">
                   Ver todos →
                 </Link>
               </div>
@@ -108,7 +108,7 @@ export default function EvaluadorInicio() {
               ) : metricas?.recientes.length === 0 ? (
                 <div className="py-16 text-center">
                   <p className="text-slate-400 text-sm font-semibold">No tienes avalúos registrados aún</p>
-                  <Link href="/dashboard/evaluador" className="mt-3 inline-block bg-[#0F172A] text-white text-xs font-bold px-4 py-2 rounded-lg">
+                  <Link href="/dashboard/valuador" className="mt-3 inline-block bg-[#0F172A] text-white text-xs font-bold px-4 py-2 rounded-lg">
                     + Crear primer avalúo
                   </Link>
                 </div>
@@ -162,7 +162,7 @@ export default function EvaluadorInicio() {
                   <p className="text-xs font-black text-red-700">⚠ Tienes {metricas.rechazados} avalúo(s) rechazado(s)</p>
                   <p className="text-[10px] text-red-500 font-semibold mt-0.5">Revisa los comentarios del controlador y corrígelos.</p>
                 </div>
-                <Link href="/dashboard/evaluador/expedientes?estado=rechazado" className="text-[10px] font-black text-red-600 border border-red-300 px-3 py-1.5 rounded-lg hover:bg-red-100 transition">
+                <Link href="/dashboard/valuador/expedientes?estado=rechazado" className="text-[10px] font-black text-red-600 border border-red-300 px-3 py-1.5 rounded-lg hover:bg-red-100 transition">
                   Ver rechazados
                 </Link>
               </div>

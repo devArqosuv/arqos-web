@@ -1,6 +1,7 @@
 import { redirect, notFound } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/util/supabase/server';
+import { requireRole } from '@/util/supabase/dal';
 import ControladorSidebar from '../../ControladorSidebar';
 import ControladorTopbar from '../../ControladorTopbar';
 import ControladorAvaluoClient from './ControladorAvaluoClient';
@@ -11,10 +12,9 @@ export default async function ControladorAvaluoPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // Gate: sólo controladores y administradores pueden entrar a detalle
+  const { user } = await requireRole(['controlador', 'administrador']);
   const supabase = await createClient();
-
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
 
   // Cargar el avalúo
   const { data: avaluo, error } = await supabase

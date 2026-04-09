@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/util/supabase/client';
-import EvaluadorTopbar from '../EvaluadorTopbar';
+import ValuadorTopbar from '../ValuadorTopbar';
 
 interface DatosAnalisis {
   porEstado: Record<string, number>;
@@ -76,7 +76,7 @@ export default function AnaliticasPage() {
 
 
       <main className="flex-1 flex flex-col overflow-hidden">
-        <EvaluadorTopbar paginaActiva="Analíticas" />
+        <ValuadorTopbar paginaActiva="Analíticas" />
 
         <div className="flex-1 overflow-y-auto p-6">
           <div className="max-w-5xl mx-auto space-y-6">

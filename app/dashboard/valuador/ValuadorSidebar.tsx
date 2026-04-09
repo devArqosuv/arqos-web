@@ -5,12 +5,12 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const NAV_ITEMS = [
-  { href: '/dashboard/evaluador/inicio',       label: 'PANEL PRINCIPAL' },
-  { href: '/dashboard/evaluador',              label: 'AVALÚOS'         },
-  { href: '/dashboard/evaluador/expedientes',  label: 'EXPEDIENTES'     },
-  { href: '/dashboard/evaluador/inmuebles',    label: 'INMUEBLES'       },
-  { href: '/dashboard/evaluador/analiticas',   label: 'ANALÍTICAS'      },
-  { href: '/dashboard/evaluador/reportes',     label: 'REPORTES'        },
+  { href: '/dashboard/valuador/inicio',       label: 'PANEL PRINCIPAL' },
+  { href: '/dashboard/valuador',              label: 'AVALÚOS'         },
+  { href: '/dashboard/valuador/expedientes',  label: 'EXPEDIENTES'     },
+  { href: '/dashboard/valuador/inmuebles',    label: 'INMUEBLES'       },
+  { href: '/dashboard/valuador/analiticas',   label: 'ANALÍTICAS'      },
+  { href: '/dashboard/valuador/reportes',     label: 'REPORTES'        },
 ];
 
 const ICONS: Record<string, React.ReactNode> = {
@@ -22,7 +22,7 @@ const ICONS: Record<string, React.ReactNode> = {
   'REPORTES':        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
 };
 
-export default function EvaluadorSidebar() {
+export default function ValuadorSidebar() {
   const pathname = usePathname();
 
   return (
@@ -61,7 +61,7 @@ export default function EvaluadorSidebar() {
 
       <div className="p-4 space-y-4">
         <Link
-          href="/dashboard/evaluador"
+          href="/dashboard/valuador"
           className="w-full bg-[#0F172A] hover:bg-[#1E293B] text-white py-3 rounded-lg font-bold text-sm tracking-wide flex items-center justify-center gap-2 transition"
         >
           <span>+</span> Nuevo Avalúo

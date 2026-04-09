@@ -1,8 +1,9 @@
 import { redirect, notFound } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/util/supabase/server';
-import EvaluadorSidebar from '../../EvaluadorSidebar';
-import EvaluadorTopbar from '../../EvaluadorTopbar';
+import { requireRole } from '@/util/supabase/dal';
+import ValuadorSidebar from '../../ValuadorSidebar';
+import ValuadorTopbar from '../../ValuadorTopbar';
 import AvaluoDetailClient from './AvaluoDetailClient';
 
 export default async function AvaluoDetailPage({
@@ -11,11 +12,9 @@ export default async function AvaluoDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  // Gate: sólo evaluadores y administradores pueden entrar a detalle
+  const { user } = await requireRole(['evaluador', 'administrador']);
   const supabase = await createClient();
-
-  // Verificar sesión
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect('/login');
 
   // Cargar el avalúo (con join al valuador)
   const { data: avaluoRaw, error } = await supabase
@@ -37,7 +36,7 @@ export default async function AvaluoDetailPage({
 
   // Verificar que el usuario actual sea el valuador o solicitante
   if (avaluoRaw.valuador_id !== user.id && avaluoRaw.solicitante_id !== user.id) {
-    redirect('/dashboard/evaluador/expedientes');
+    redirect('/dashboard/valuador/expedientes');
   }
 
   // Aplanar el join (Supabase devuelve relaciones como array)
@@ -59,13 +58,13 @@ export default async function AvaluoDetailPage({
 
   return (
     <div className="flex h-screen bg-[#F0F2F5] font-sans text-slate-900">
-      <EvaluadorSidebar />
+      <ValuadorSidebar />
       <main className="flex-1 flex flex-col overflow-hidden">
-        <EvaluadorTopbar paginaActiva="Expedientes" />
+        <ValuadorTopbar paginaActiva="Expedientes" />
         <div className="flex-1 overflow-y-auto">
           <div className="px-6 pt-4">
             <Link
-              href="/dashboard/evaluador/expedientes"
+              href="/dashboard/valuador/expedientes"
               className="text-[10px] font-bold text-slate-400 hover:text-slate-900 transition"
             >
               ← Volver a expedientes

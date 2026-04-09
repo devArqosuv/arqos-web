@@ -233,7 +233,7 @@ export async function generarPreavaluoAction(avaluoId: string): Promise<Resultad
     }
 
     revalidatePath(`/dashboard/controlador/expedientes/${avaluoId}`);
-    revalidatePath(`/dashboard/evaluador/expedientes/${avaluoId}`);
+    revalidatePath(`/dashboard/valuador/expedientes/${avaluoId}`);
 
     return {
       exito: true,

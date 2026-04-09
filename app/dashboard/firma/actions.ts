@@ -71,7 +71,7 @@ export async function firmarUVAction(avaluoId: string): Promise<Resultado> {
     });
 
     revalidatePath(`/dashboard/controlador/expedientes/${avaluoId}`);
-    revalidatePath(`/dashboard/evaluador/expedientes/${avaluoId}`);
+    revalidatePath(`/dashboard/valuador/expedientes/${avaluoId}`);
 
     return { exito: true, mensaje: 'Firmaste correctamente. Esperando firma del valuador.' };
   } catch (e) {
@@ -325,7 +325,7 @@ export async function firmarValuadorAction(avaluoId: string): Promise<Resultado>
     }
 
     revalidatePath(`/dashboard/controlador/expedientes/${avaluoId}`);
-    revalidatePath(`/dashboard/evaluador/expedientes/${avaluoId}`);
+    revalidatePath(`/dashboard/valuador/expedientes/${avaluoId}`);
 
     return {
       exito: true,

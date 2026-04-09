@@ -53,7 +53,7 @@ export default function ControladorTopbar() {
           )}
           <span className="font-bold border-b-2 border-slate-900 h-full flex items-center pt-[2px]">Controladores</span>
           {isAdmin && (
-            <Link href="/dashboard/evaluador" className="text-slate-400 font-semibold hover:text-slate-900 transition">Valuador</Link>
+            <Link href="/dashboard/valuador" className="text-slate-400 font-semibold hover:text-slate-900 transition">Valuador</Link>
           )}
         </nav>
       </div>

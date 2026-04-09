@@ -17,7 +17,7 @@ function iniciales(nombre: string, apellidos: string | null) {
   return (a + b).toUpperCase();
 }
 
-export default function EvaluadorTopbar({ paginaActiva }: { paginaActiva: string }) {
+export default function ValuadorTopbar({ paginaActiva }: { paginaActiva: string }) {
   const [perfil, setPerfil] = useState<PerfilLigero | null>(null);
 
   useEffect(() => {
@@ -43,7 +43,7 @@ export default function EvaluadorTopbar({ paginaActiva }: { paginaActiva: string
 
   const nombreCompleto = perfil
     ? `${perfil.nombre} ${perfil.apellidos ?? ''}`.trim()
-    : isAdmin ? 'Administrador' : 'Evaluador';
+    : isAdmin ? 'Administrador' : 'Valuador';
 
   return (
     <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0">
@@ -58,8 +58,8 @@ export default function EvaluadorTopbar({ paginaActiva }: { paginaActiva: string
           )}
           <span className={activeClass}>Valuador</span>
           <span className="text-slate-300">|</span>
-          <Link href="/dashboard/evaluador/expedientes" className={paginaActiva === 'Expedientes' ? activeClass : inactiveClass}>Expedientes</Link>
-          <Link href="/dashboard/evaluador/inmuebles" className={paginaActiva === 'Inmuebles' ? activeClass : inactiveClass}>Inmuebles</Link>
+          <Link href="/dashboard/valuador/expedientes" className={paginaActiva === 'Expedientes' ? activeClass : inactiveClass}>Expedientes</Link>
+          <Link href="/dashboard/valuador/inmuebles" className={paginaActiva === 'Inmuebles' ? activeClass : inactiveClass}>Inmuebles</Link>
         </nav>
       </div>
       <div className="flex items-center gap-3 border-l border-slate-200 pl-6">

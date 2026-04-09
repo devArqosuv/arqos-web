@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/util/supabase/client';
-import EvaluadorTopbar from '../EvaluadorTopbar';
+import ValuadorTopbar from '../ValuadorTopbar';
 
 const ESTADO_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   solicitud:        { label: 'Solicitud',         color: 'text-blue-600',    bg: 'bg-blue-50 border-blue-200' },
@@ -67,7 +67,7 @@ function ExpedientesPageInner() {
 
 
       <main className="flex-1 flex flex-col overflow-hidden">
-        <EvaluadorTopbar paginaActiva="Expedientes" />
+        <ValuadorTopbar paginaActiva="Expedientes" />
 
         <div className="flex-1 overflow-y-auto p-6">
           <div className="max-w-6xl mx-auto space-y-5">
@@ -79,7 +79,7 @@ function ExpedientesPageInner() {
                 <h1 className="text-2xl font-black text-slate-900 tracking-tight">Expedientes</h1>
               </div>
               <Link
-                href="/dashboard/evaluador"
+                href="/dashboard/valuador"
                 className="bg-[#0F172A] hover:bg-slate-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition"
               >
                 <span className="text-base leading-none">+</span> Nueva Valuación
@@ -183,7 +183,7 @@ function ExpedientesPageInner() {
                           </td>
                           <td className="px-5 py-4">
                             <Link
-                              href={`/dashboard/evaluador/expedientes/${a.id}`}
+                              href={`/dashboard/valuador/expedientes/${a.id}`}
                               className="text-[10px] font-bold text-slate-400 hover:text-slate-900 opacity-0 group-hover:opacity-100 transition"
                             >
                               Ver →

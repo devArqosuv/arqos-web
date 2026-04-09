@@ -5,6 +5,6 @@ import ExpedientesClient from './ExpedientesClient';
 // Gate de autenticación server-side antes de renderizar el listado
 // (que es un client component con estado local y filtros).
 export default async function ExpedientesPage() {
-  await requireRole(['controlador', 'administrador']);
+  await requireRole(['evaluador', 'administrador']);
   return <ExpedientesClient />;
 }

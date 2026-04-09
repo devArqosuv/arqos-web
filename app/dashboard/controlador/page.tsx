@@ -85,7 +85,7 @@ export default function ControladorDashboard() {
         ? `✓ ${avaluoSeleccionado.folio} aprobado.`
         : accion === 'rechazar'
         ? `${avaluoSeleccionado.folio} rechazado.`
-        : `Correcciones enviadas al evaluador.`,
+        : `Correcciones enviadas al valuador.`,
       tipo: 'exito',
     });
 
@@ -260,7 +260,7 @@ export default function ControladorDashboard() {
               </div>
               {avaluoSeleccionado.notas && (
                 <div className="mt-3">
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Notas del Evaluador</p>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Notas del Valuador</p>
                   <p className="text-[10px] text-slate-600 font-semibold leading-relaxed bg-white border border-slate-200 rounded-lg px-3 py-2">
                     {avaluoSeleccionado.notas}
                   </p>
@@ -305,7 +305,7 @@ export default function ControladorDashboard() {
                     onChange={(e) => setNota(e.target.value)}
                     placeholder={
                       accion === 'aprobar' ? 'Observaciones adicionales...' :
-                      accion === 'correcciones' ? 'Describe qué debe corregir el evaluador...' :
+                      accion === 'correcciones' ? 'Describe qué debe corregir el valuador...' :
                       'Explica el motivo del rechazo...'
                     }
                     rows={3}
