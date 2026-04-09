@@ -34,6 +34,23 @@ interface BancoRemoto {
   }[];
 }
 
+interface UsoSueloOption {
+  id: string;
+  clave: string;
+  nombre: string;
+}
+
+// Heurística simple: ¿la dirección extraída por la IA dice Querétaro?
+function esEnQueretaro(estadoInmueble: string | null | undefined): boolean {
+  if (!estadoInmueble) return false;
+  const normalizado = estadoInmueble
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // sin acentos
+    .toLowerCase()
+    .trim();
+  return /\bqueretaro\b/.test(normalizado) || /\bqro\b/.test(normalizado);
+}
+
 interface ResultadoDocumento {
   id: string;
   nombre: string;
@@ -86,6 +103,12 @@ export default function EvaluadorDashboard() {
   const [bancoDropdownAbierto, setBancoDropdownAbierto] = useState(false);
   const [archivosSlots, setArchivosSlots] = useState<Record<string, File | null>>({});
   const [docsCustom, setDocsCustom] = useState<DocCustom[]>([]);
+
+  // Uso de suelo (geofence Querétaro)
+  const [usosSueloQro, setUsosSueloQro] = useState<UsoSueloOption[]>([]);
+  const [usoSueloSeleccionado, setUsoSueloSeleccionado] = useState<string>('');
+  const [usoSueloFile, setUsoSueloFile] = useState<File | null>(null);
+  const usoSueloFileRef = useRef<HTMLInputElement>(null);
   const [analizando, setAnalizando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoAnalisis | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -125,6 +148,30 @@ export default function EvaluadorDashboard() {
     return () => { cancelado = true; };
   }, []);
 
+  // Cargar catálogo de usos de suelo de Querétaro al montar
+  useEffect(() => {
+    let cancelado = false;
+    async function cargarUsosSuelo() {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('usos_suelo_qro')
+        .select('id, clave, nombre')
+        .eq('activo', true)
+        .order('orden', { ascending: true });
+
+      if (cancelado) return;
+
+      if (error) {
+        console.error('Error cargando usos de suelo Qro:', error);
+        setUsosSueloQro([]);
+      } else {
+        setUsosSueloQro((data as UsoSueloOption[] | null) ?? []);
+      }
+    }
+    cargarUsosSuelo();
+    return () => { cancelado = true; };
+  }, []);
+
   // Cerrar dropdown al hacer clic fuera
   useEffect(() => {
     if (!tipoDropdownAbierto) return;
@@ -152,6 +199,20 @@ export default function EvaluadorDashboard() {
 
   const bancoActual = bancos.find((b) => b.id === bancoSeleccionado);
 
+  // ── Geofence Querétaro ────────────────────────────────────
+  // Después de que la IA analiza los PDFs, miramos el estado_inmueble extraído
+  // y determinamos si el inmueble está en Querétaro.
+  // - Sí → mostramos dropdown del catálogo `usos_suelo_qro`
+  // - No → mostramos input para subir imagen de uso de suelo
+  const ubicacionDetectada = resultado?.datos_consolidados?.ubicacion ?? null;
+  const inmuebleEnQro = esEnQueretaro(ubicacionDetectada);
+  const usoSueloListo =
+    !resultado?.valido
+      ? true                                                  // todavía no aplica
+      : inmuebleEnQro
+      ? !!usoSueloSeleccionado                                // requiere selección del catálogo
+      : !!usoSueloFile;                                       // requiere imagen subida
+
   const docsRequeridos: DocumentoRequerido[] =
     tipoAvaluo === '1.0'
       ? DOCS_TIPO_1
@@ -170,6 +231,11 @@ export default function EvaluadorDashboard() {
   const mostrarPasoDocumentos =
     tipoAvaluo === '1.0' || (tipoAvaluo === '2.0' && bancoSeleccionado !== '');
 
+  const resetUsoSuelo = () => {
+    setUsoSueloSeleccionado('');
+    setUsoSueloFile(null);
+  };
+
   const handleTipoChange = (tipo: TipoAvaluo) => {
     setTipoAvaluo(tipo);
     setBancoSeleccionado('');
@@ -177,6 +243,7 @@ export default function EvaluadorDashboard() {
     setDocsCustom([]);
     setResultado(null);
     setGuardadoResult(null);
+    resetUsoSuelo();
   };
 
   const handleBancoChange = (banco: BancoId) => {
@@ -185,6 +252,7 @@ export default function EvaluadorDashboard() {
     setDocsCustom([]);
     setResultado(null);
     setGuardadoResult(null);
+    resetUsoSuelo();
   };
 
   const handleFileSlot = (id: string, file: File | null) => {
@@ -272,6 +340,17 @@ export default function EvaluadorDashboard() {
     const ubicacionRaw = datos.ubicacion || '';
     const partesDir = ubicacionRaw.split(',').map((p: string) => p.trim());
 
+    // Resolver uso de suelo según geofence
+    let usoSueloPayload: string | null = null;
+    let usoSueloAuto = false;
+    if (inmuebleEnQro && usoSueloSeleccionado) {
+      const usoElegido = usosSueloQro.find((u) => u.id === usoSueloSeleccionado);
+      if (usoElegido) {
+        usoSueloPayload = `${usoElegido.clave} — ${usoElegido.nombre}`;
+        usoSueloAuto = true;
+      }
+    }
+
     const payload = {
       tipo_avaluo: tipoAvaluo as '1.0' | '2.0',
       banco_id: tipoAvaluo === '2.0' && bancoSeleccionado && bancoSeleccionado !== BANCO_OTRO
@@ -288,15 +367,30 @@ export default function EvaluadorDashboard() {
       superficie_terreno: datos.superficie ? Number(datos.superficie.replace(/[^0-9.]/g, '')) : undefined,
       notas: notasRiesgo || datos.observaciones || undefined,
       moneda: 'MXN',
+      uso_suelo: usoSueloPayload,
+      uso_suelo_auto: usoSueloAuto,
     };
 
-    const archivos = esModoCustom
+    const archivosBase = esModoCustom
       ? docsCustom
           .filter((d): d is DocCustom & { file: File } => !!d.file && !!d.nombre.trim())
           .map((d) => ({ docId: d.id, docNombre: d.nombre.trim(), file: d.file }))
       : docsRequeridos
           .filter((doc) => archivosSlots[doc.id])
           .map((doc) => ({ docId: doc.id, docNombre: doc.nombre, file: archivosSlots[doc.id]! }));
+
+    // Si NO es Querétaro y subió imagen de uso de suelo, la agregamos con categoría especial
+    const archivos = (!inmuebleEnQro && usoSueloFile)
+      ? [
+          ...archivosBase,
+          {
+            docId: 'uso-suelo',
+            docNombre: 'Acreditación de uso de suelo (imagen)',
+            file: usoSueloFile,
+            categoria: 'uso_suelo' as const,
+          },
+        ]
+      : archivosBase;
 
     const res = await guardarAvaluo(payload, archivos);
     setGuardadoResult(res);
@@ -312,6 +406,7 @@ export default function EvaluadorDashboard() {
     setValorBase('');
     setNotasRiesgo('');
     setGuardadoResult(null);
+    resetUsoSuelo();
   };
 
   // Estado del badge
@@ -566,7 +661,7 @@ export default function EvaluadorDashboard() {
                                 <div className="flex items-center gap-2 shrink-0">
                                   <input
                                     type="file"
-                                    accept="application/pdf"
+                                    accept="application/pdf,image/jpeg,image/png"
                                     className="hidden"
                                     ref={(el) => { fileInputRefs.current[doc.id] = el; }}
                                     onChange={(e) => actualizarDocCustomFile(doc.id, e.target.files?.[0] || null)}
@@ -580,7 +675,7 @@ export default function EvaluadorDashboard() {
                                         : 'text-blue-600 border border-blue-200 hover:bg-blue-50'
                                     }`}
                                   >
-                                    {doc.file ? 'Cambiar' : 'Subir PDF'}
+                                    {doc.file ? 'Cambiar' : 'Subir archivo'}
                                   </button>
                                   <button
                                     type="button"
@@ -641,7 +736,7 @@ export default function EvaluadorDashboard() {
                                   )}
                                   <input
                                     type="file"
-                                    accept="application/pdf"
+                                    accept="application/pdf,image/jpeg,image/png"
                                     className="hidden"
                                     ref={(el) => { fileInputRefs.current[doc.id] = el; }}
                                     onChange={(e) => handleFileSlot(doc.id, e.target.files?.[0] || null)}
@@ -654,7 +749,7 @@ export default function EvaluadorDashboard() {
                                         : 'text-blue-600 border border-blue-200 hover:bg-blue-50'
                                     }`}
                                   >
-                                    {archivoActual ? 'Cambiar' : 'Subir PDF'}
+                                    {archivoActual ? 'Cambiar' : 'Subir archivo'}
                                   </button>
                                 </div>
                               </div>
@@ -898,10 +993,89 @@ export default function EvaluadorDashboard() {
                   </div>
                 )}
 
+                {/* Uso de suelo (solo después de validación con IA) */}
+                {resultado?.valido && (
+                  <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        Uso de suelo
+                      </p>
+                      {inmuebleEnQro ? (
+                        <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                          QUERÉTARO • AUTOMÁTICO
+                        </span>
+                      ) : (
+                        <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                          FUERA DE QRO • SUBE IMAGEN
+                        </span>
+                      )}
+                    </div>
+
+                    {inmuebleEnQro ? (
+                      <>
+                        {usosSueloQro.length === 0 ? (
+                          <p className="text-xs text-slate-400 font-semibold">
+                            El catálogo de usos de suelo de Querétaro está vacío. El administrador debe poblarlo.
+                          </p>
+                        ) : (
+                          <select
+                            value={usoSueloSeleccionado}
+                            onChange={(e) => setUsoSueloSeleccionado(e.target.value)}
+                            className="w-full px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-xl text-sm font-semibold text-slate-700 focus:border-[#0F172A] focus:bg-white outline-none"
+                          >
+                            <option value="">Seleccionar uso de suelo…</option>
+                            {usosSueloQro.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.clave} — {u.nombre}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </>
+                    ) : (
+                      <div className="space-y-2">
+                        <input
+                          ref={usoSueloFileRef}
+                          type="file"
+                          accept="image/jpeg,image/png,application/pdf"
+                          className="hidden"
+                          onChange={(e) => setUsoSueloFile(e.target.files?.[0] || null)}
+                        />
+                        {usoSueloFile ? (
+                          <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-800 truncate">{usoSueloFile.name}</p>
+                              <p className="text-[10px] text-slate-400">
+                                {(usoSueloFile.size / 1024).toFixed(1)} KB
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => usoSueloFileRef.current?.click()}
+                              className="text-[10px] font-bold text-slate-600 border border-slate-300 hover:bg-slate-100 px-3 py-1.5 rounded-lg transition shrink-0"
+                            >
+                              Cambiar
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => usoSueloFileRef.current?.click()}
+                            className="w-full flex items-center justify-center gap-2 text-xs font-bold text-blue-600 border-2 border-dashed border-blue-200 hover:border-blue-400 hover:bg-blue-50 rounded-xl py-4 transition"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                            Subir imagen de uso de suelo
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Botón guardar */}
                 <button
                   onClick={handleGuardar}
-                  disabled={!resultado?.valido || guardando || guardadoResult?.exito === true}
+                  disabled={!resultado?.valido || guardando || guardadoResult?.exito === true || !usoSueloListo}
                   className="w-full bg-[#0F172A] hover:bg-slate-700 disabled:bg-slate-200 disabled:text-slate-400 text-white font-black text-xs py-4 rounded-2xl transition flex items-center justify-center gap-2 tracking-widest shadow-lg shadow-slate-900/20"
                 >
                   {guardando ? (

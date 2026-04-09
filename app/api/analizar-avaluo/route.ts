@@ -6,7 +6,21 @@ const MODEL = 'anthropic/claude-sonnet-4-5';
 // Formato de contenido OpenAI-compatible usado por OpenRouter
 type ContentPart =
   | { type: 'text'; text: string }
-  | { type: 'file'; file: { filename: string; file_data: string } };
+  | { type: 'file'; file: { filename: string; file_data: string } }
+  | { type: 'image_url'; image_url: { url: string } };
+
+// MIME types permitidos para análisis con IA
+const MIME_PERMITIDOS: Record<string, string> = {
+  pdf:  'application/pdf',
+  jpg:  'image/jpeg',
+  jpeg: 'image/jpeg',
+  png:  'image/png',
+};
+
+function detectarMime(fileName: string, fallback: string): string {
+  const ext = (fileName.split('.').pop() || '').toLowerCase();
+  return MIME_PERMITIDOS[ext] ?? fallback;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -30,21 +44,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Tipo de avalúo inválido.' }, { status: 400 });
     }
 
-    // Convertir cada PDF a base64 emparejado con su ID y nombre
+    // Convertir cada archivo (PDF o imagen) a base64 + detectar MIME
     const documentos = await Promise.all(
       files.map(async (file, index) => {
         const bytes = await file.arrayBuffer();
         const base64 = Buffer.from(bytes).toString('base64');
+        const mime = detectarMime(file.name, file.type || 'application/octet-stream');
         return {
           id: docIds[index],
           nombre: docNombres[index],
           fileName: file.name,
           base64,
+          mime,
         };
       })
     );
 
-    // Construir el contenido multimodal: cada doc etiquetado + el PDF como data URL
+    // Validar que todos los archivos sean de un formato soportado
+    const formatoInvalido = documentos.find(
+      (d) => !Object.values(MIME_PERMITIDOS).includes(d.mime)
+    );
+    if (formatoInvalido) {
+      return NextResponse.json(
+        { error: `Formato no soportado en ${formatoInvalido.fileName}. Solo se aceptan PDF, JPG o PNG.` },
+        { status: 400 }
+      );
+    }
+
+    // Construir el contenido multimodal: cada doc etiquetado + PDF como `file` o imagen como `image_url`
     const contentBlocks: ContentPart[] = [];
 
     for (const doc of documentos) {
@@ -52,19 +79,27 @@ export async function POST(req: NextRequest) {
         type: 'text',
         text: `\n===== DOCUMENTO ${doc.id}: ${doc.nombre} (archivo: ${doc.fileName}) =====`,
       });
-      contentBlocks.push({
-        type: 'file',
-        file: {
-          filename: doc.fileName,
-          file_data: `data:application/pdf;base64,${doc.base64}`,
-        },
-      });
+
+      const dataUrl = `data:${doc.mime};base64,${doc.base64}`;
+
+      if (doc.mime === 'application/pdf') {
+        contentBlocks.push({
+          type: 'file',
+          file: { filename: doc.fileName, file_data: dataUrl },
+        });
+      } else {
+        // image/jpeg o image/png
+        contentBlocks.push({
+          type: 'image_url',
+          image_url: { url: dataUrl },
+        });
+      }
     }
 
     contentBlocks.push({
       type: 'text',
       text: `
-Eres un perito valuador experto en avalúos bancarios mexicanos. Recibirás ${documentos.length} documentos PDF de un expediente de avalúo tipo ${tipoAvaluo} y debes analizarlos con criterios profesionales estrictos.
+Eres un perito valuador experto en avalúos bancarios mexicanos. Recibirás ${documentos.length} documentos (PDF o imágenes JPG/PNG) de un expediente de avalúo tipo ${tipoAvaluo} y debes analizarlos con criterios profesionales estrictos.
 
 CRITERIOS DE VALIDACIÓN Y REFERENCIA CRUZADA:
 

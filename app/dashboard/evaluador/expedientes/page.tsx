@@ -7,14 +7,18 @@ import { createClient } from '@/util/supabase/client';
 import EvaluadorTopbar from '../EvaluadorTopbar';
 
 const ESTADO_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  solicitud:  { label: 'Solicitud',  color: 'text-blue-600',   bg: 'bg-blue-50 border-blue-200' },
-  captura:    { label: 'Captura',    color: 'text-amber-600',  bg: 'bg-amber-50 border-amber-200' },
-  revision:   { label: 'Revisión',   color: 'text-violet-600', bg: 'bg-violet-50 border-violet-200' },
-  aprobado:   { label: 'Aprobado',   color: 'text-emerald-600',bg: 'bg-emerald-50 border-emerald-200' },
-  rechazado:  { label: 'Rechazado',  color: 'text-red-600',    bg: 'bg-red-50 border-red-200' },
+  solicitud:        { label: 'Solicitud',         color: 'text-blue-600',    bg: 'bg-blue-50 border-blue-200' },
+  captura:          { label: 'Captura',           color: 'text-amber-600',   bg: 'bg-amber-50 border-amber-200' },
+  agenda_visita:    { label: 'Agenda Visita',     color: 'text-orange-600',  bg: 'bg-orange-50 border-orange-200' },
+  visita_realizada: { label: 'Visita Realizada',  color: 'text-purple-600',  bg: 'bg-purple-50 border-purple-200' },
+  preavaluo:        { label: 'Preavalúo',         color: 'text-cyan-600',    bg: 'bg-cyan-50 border-cyan-200' },
+  revision:         { label: 'Revisión',          color: 'text-violet-600',  bg: 'bg-violet-50 border-violet-200' },
+  firma:            { label: 'Firma',             color: 'text-sky-600',     bg: 'bg-sky-50 border-sky-200' },
+  aprobado:         { label: 'Aprobado',          color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
+  rechazado:        { label: 'Rechazado',         color: 'text-red-600',     bg: 'bg-red-50 border-red-200' },
 };
 
-const ESTADOS = ['todos', 'captura', 'revision', 'aprobado', 'rechazado'];
+const ESTADOS = ['todos', 'captura', 'agenda_visita', 'visita_realizada', 'preavaluo', 'revision', 'firma', 'aprobado', 'rechazado'];
 
 function ExpedientesPageInner() {
   const searchParams = useSearchParams();
@@ -178,9 +182,12 @@ function ExpedientesPageInner() {
                             </span>
                           </td>
                           <td className="px-5 py-4">
-                            <button className="text-[10px] font-bold text-slate-400 hover:text-slate-900 opacity-0 group-hover:opacity-100 transition">
+                            <Link
+                              href={`/dashboard/evaluador/expedientes/${a.id}`}
+                              className="text-[10px] font-bold text-slate-400 hover:text-slate-900 opacity-0 group-hover:opacity-100 transition"
+                            >
                               Ver →
-                            </button>
+                            </Link>
                           </td>
                         </tr>
                       );

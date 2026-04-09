@@ -1,15 +1,20 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { createClient } from '@/util/supabase/client';
 import ControladorSidebar from '../ControladorSidebar';
 import ControladorTopbar from '../ControladorTopbar';
 
 const ESTADO_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  revision:  { label: 'En Revisión',  color: 'text-violet-600', bg: 'bg-violet-50 border-violet-200' },
-  aprobado:  { label: 'Aprobado',     color: 'text-emerald-600',bg: 'bg-emerald-50 border-emerald-200' },
-  rechazado: { label: 'Rechazado',    color: 'text-red-600',    bg: 'bg-red-50 border-red-200' },
-  captura:   { label: 'En Corrección',color: 'text-amber-600',  bg: 'bg-amber-50 border-amber-200' },
+  captura:          { label: 'En Captura',       color: 'text-amber-600',   bg: 'bg-amber-50 border-amber-200' },
+  agenda_visita:    { label: 'Agenda Visita',    color: 'text-orange-600',  bg: 'bg-orange-50 border-orange-200' },
+  visita_realizada: { label: 'Visita Realizada', color: 'text-purple-600',  bg: 'bg-purple-50 border-purple-200' },
+  preavaluo:        { label: 'Preavalúo',        color: 'text-cyan-600',    bg: 'bg-cyan-50 border-cyan-200' },
+  revision:         { label: 'En Revisión',      color: 'text-violet-600',  bg: 'bg-violet-50 border-violet-200' },
+  firma:            { label: 'Firma',            color: 'text-sky-600',     bg: 'bg-sky-50 border-sky-200' },
+  aprobado:         { label: 'Aprobado',         color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
+  rechazado:        { label: 'Rechazado',        color: 'text-red-600',     bg: 'bg-red-50 border-red-200' },
 };
 
 export default function ControladorExpedientes() {
@@ -25,10 +30,13 @@ export default function ControladorExpedientes() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // El controlador ve:
+      //  - Todos los avalúos en estados que requieren su atención (sin asignar todavía)
+      //  - + los avalúos que ya tiene asignados explícitamente
       let query = supabase
         .from('avaluos')
-        .select('id, folio, estado, calle, colonia, municipio, estado_inmueble, valor_estimado, fecha_solicitud, tipo_inmueble')
-        .eq('controlador_id', user.id)
+        .select('id, folio, estado, calle, colonia, municipio, estado_inmueble, valor_estimado, valor_uv, valor_valuador, fecha_solicitud, tipo_inmueble, controlador_id')
+        .or(`controlador_id.eq.${user.id},estado.in.(visita_realizada,preavaluo,revision,firma,aprobado,rechazado)`)
         .order('fecha_solicitud', { ascending: false });
 
       if (filtro !== 'todos') query = query.eq('estado', filtro);
@@ -63,7 +71,7 @@ export default function ControladorExpedientes() {
 
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center bg-white rounded-xl border border-slate-200 p-1 gap-0.5">
-                {['todos', 'revision', 'aprobado', 'rechazado', 'captura'].map((f) => (
+                {['todos', 'visita_realizada', 'preavaluo', 'revision', 'firma', 'aprobado', 'rechazado'].map((f) => (
                   <button
                     key={f}
                     onClick={() => setFiltro(f)}
@@ -71,7 +79,7 @@ export default function ControladorExpedientes() {
                       filtro === f ? 'bg-[#0F172A] text-white' : 'text-slate-400 hover:text-slate-700'
                     }`}
                   >
-                    {f === 'todos' ? 'Todos' : f === 'revision' ? 'Revisión' : f === 'captura' ? 'Corrección' : ESTADO_CONFIG[f]?.label || f}
+                    {f === 'todos' ? 'Todos' : ESTADO_CONFIG[f]?.label || f}
                   </button>
                 ))}
               </div>
@@ -100,7 +108,7 @@ export default function ControladorExpedientes() {
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 border-b border-slate-100">
                     <tr>
-                      {['Folio', 'Inmueble', 'Municipio', 'Valor Est.', 'Estado', 'Fecha'].map(h => (
+                      {['Folio', 'Inmueble', 'Municipio', 'Valor', 'Estado', 'Fecha', ''].map(h => (
                         <th key={h} className="px-5 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">{h}</th>
                       ))}
                     </tr>
@@ -108,8 +116,9 @@ export default function ControladorExpedientes() {
                   <tbody className="divide-y divide-slate-50">
                     {filtrados.map((a) => {
                       const est = ESTADO_CONFIG[a.estado] || ESTADO_CONFIG.revision;
+                      const valorMostrar = a.valor_valuador ?? a.valor_uv ?? a.valor_estimado;
                       return (
-                        <tr key={a.id} className="hover:bg-slate-50 transition">
+                        <tr key={a.id} className="hover:bg-slate-50 transition group">
                           <td className="px-5 py-4"><span className="text-xs font-black text-slate-900">{a.folio || '—'}</span></td>
                           <td className="px-5 py-4 max-w-[180px]">
                             <p className="text-xs font-semibold text-slate-700 truncate">{a.calle}</p>
@@ -118,7 +127,7 @@ export default function ControladorExpedientes() {
                           <td className="px-5 py-4"><p className="text-xs font-semibold text-slate-600">{a.municipio}</p></td>
                           <td className="px-5 py-4">
                             <span className="text-xs font-bold text-slate-700">
-                              {a.valor_estimado ? `$${Number(a.valor_estimado).toLocaleString('es-MX')}` : '—'}
+                              {valorMostrar ? `$${Number(valorMostrar).toLocaleString('es-MX')}` : '—'}
                             </span>
                           </td>
                           <td className="px-5 py-4">
@@ -128,6 +137,14 @@ export default function ControladorExpedientes() {
                             <span className="text-[10px] text-slate-400 font-semibold">
                               {new Date(a.fecha_solicitud).toLocaleDateString('es-MX')}
                             </span>
+                          </td>
+                          <td className="px-5 py-4 text-right">
+                            <Link
+                              href={`/dashboard/controlador/expedientes/${a.id}`}
+                              className="text-[10px] font-bold text-slate-400 hover:text-slate-900 opacity-0 group-hover:opacity-100 transition"
+                            >
+                              Ver →
+                            </Link>
                           </td>
                         </tr>
                       );

@@ -56,7 +56,7 @@ export default function EvaluadorTopbar({ paginaActiva }: { paginaActiva: string
               <Link href="/dashboard/controlador" className={inactiveClass}>Controladores</Link>
             </>
           )}
-          <span className={activeClass}>Valuadores</span>
+          <span className={activeClass}>Valuador</span>
           <span className="text-slate-300">|</span>
           <Link href="/dashboard/evaluador/expedientes" className={paginaActiva === 'Expedientes' ? activeClass : inactiveClass}>Expedientes</Link>
           <Link href="/dashboard/evaluador/inmuebles" className={paginaActiva === 'Inmuebles' ? activeClass : inactiveClass}>Inmuebles</Link>

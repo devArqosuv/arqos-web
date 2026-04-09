@@ -100,7 +100,7 @@ export default async function AdminDashboard() {
             </Link>
             <Link href="/dashboard/evaluador" className="flex items-center gap-3 px-4 py-3 text-slate-500 hover:bg-slate-50 font-semibold rounded-lg text-sm">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
-              VALUADORES
+              VALUADOR
             </Link>
           </nav>
         </div>
@@ -122,7 +122,7 @@ export default async function AdminDashboard() {
             <nav className="flex gap-6 text-sm h-full items-center">
               <span className="font-bold border-b-2 border-slate-900 h-full flex items-center pt-[2px]">Admin</span>
               <Link href="/dashboard/controlador" className="text-slate-400 font-semibold hover:text-slate-900 transition">Controladores</Link>
-              <Link href="/dashboard/evaluador" className="text-slate-400 font-semibold hover:text-slate-900 transition">Valuadores</Link>
+              <Link href="/dashboard/evaluador" className="text-slate-400 font-semibold hover:text-slate-900 transition">Valuador</Link>
             </nav>
           </div>
           <div className="flex items-center gap-3 border-l border-slate-200 pl-6">

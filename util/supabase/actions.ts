@@ -1,14 +1,29 @@
 'use server'
 
 import { createClient } from '@/util/supabase/server'
-import { CrearAvaluoPayload, GuardarAvaluoResult, TipoInmueble } from '@/types/arqos'
+import { CrearAvaluoPayload, GuardarAvaluoResult, TipoInmueble, CategoriaDocumento } from '@/types/arqos'
+
+// MIME types permitidos al subir documentos del expediente
+const MIME_PERMITIDOS: Record<string, string> = {
+  pdf:  'application/pdf',
+  jpg:  'image/jpeg',
+  jpeg: 'image/jpeg',
+  png:  'image/png',
+}
+
+interface ArchivoExpediente {
+  docId: string
+  docNombre: string
+  file: File
+  categoria?: CategoriaDocumento
+}
 
 // ============================================================
 // ACTION: Guardar avalúo completo con sus documentos
 // ============================================================
 export async function guardarAvaluo(
   payload: CrearAvaluoPayload,
-  archivos: { docId: string; docNombre: string; file: File }[]
+  archivos: ArchivoExpediente[]
 ): Promise<GuardarAvaluoResult> {
   const supabase = await createClient()
 
@@ -60,6 +75,8 @@ export async function guardarAvaluo(
       valor_estimado:          valorNumerico,
       moneda:                  payload.moneda || 'MXN',
       banco_id:                payload.banco_id || null,
+      uso_suelo:               payload.uso_suelo || null,
+      uso_suelo_auto:          payload.uso_suelo_auto ?? false,
       estado:                  'captura',           // Empieza en captura al guardarse
       valuador_id:             user.id,             // El evaluador actual es el valuador
       solicitante_id:          user.id,
@@ -77,18 +94,25 @@ export async function guardarAvaluo(
     }
   }
 
-  // 6. Subir los archivos PDF al Storage de Supabase
+  // 6. Subir los archivos (PDF o JPG/PNG) al Storage de Supabase
   const erroresDocumentos: string[] = []
 
   for (const archivo of archivos) {
-    const extension = archivo.file.name.split('.').pop() || 'pdf'
+    const extension = (archivo.file.name.split('.').pop() || '').toLowerCase()
+    const contentType = MIME_PERMITIDOS[extension] ?? archivo.file.type ?? 'application/octet-stream'
+
+    if (!MIME_PERMITIDOS[extension]) {
+      erroresDocumentos.push(`Formato no permitido en ${archivo.docNombre}: solo PDF, JPG o PNG`)
+      continue
+    }
+
     const storagePath = `avaluos/${avaluo.id}/${archivo.docId}-${Date.now()}.${extension}`
 
     // Subir el archivo al bucket 'documentos'
     const { error: uploadError } = await supabase.storage
       .from('documentos')
       .upload(storagePath, archivo.file, {
-        contentType: 'application/pdf',
+        contentType,
         upsert: false,
       })
 
@@ -106,8 +130,9 @@ export async function guardarAvaluo(
         descripcion:   `Documento ${archivo.docId} del expediente`,
         bucket:        'documentos',
         storage_path:  storagePath,
-        tipo_mime:     'application/pdf',
+        tipo_mime:     contentType,
         tamanio_bytes: archivo.file.size,
+        categoria:     archivo.categoria ?? 'documento',
         created_by:    user.id,
       })
 

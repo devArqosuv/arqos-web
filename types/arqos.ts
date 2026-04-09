@@ -3,7 +3,35 @@
 // ============================================================
 
 export type RolUsuario = 'administrador' | 'evaluador' | 'controlador'
-export type EstadoAvaluo = 'solicitud' | 'captura' | 'revision' | 'aprobado' | 'rechazado'
+export type EstadoAvaluo =
+  | 'solicitud'
+  | 'captura'
+  | 'agenda_visita'
+  | 'visita_realizada'
+  | 'preavaluo'
+  | 'revision'
+  | 'firma'
+  | 'aprobado'
+  | 'rechazado'
+
+// Categoría de cada documento subido a Supabase Storage
+export type CategoriaDocumento =
+  | 'documento'   // PDFs/JPGs del expediente
+  | 'fachada'     // 1 requerida
+  | 'entorno'     // 2 requeridas
+  | 'interior'    // 8 requeridas
+  | 'uso_suelo'   // imagen de uso de suelo cuando NO es Querétaro
+  | 'otro'
+
+// ── Uso de suelo de Querétaro ──────────────────────────────
+export interface UsoSueloQro {
+  id: string
+  clave: string
+  nombre: string
+  descripcion: string | null
+  activo: boolean
+  orden: number
+}
 
 // ── Catálogo de bancos ─────────────────────────────────────
 export interface Banco {
@@ -104,6 +132,11 @@ export interface CrearAvaluoPayload {
   tipo_avaluo: '1.0' | '2.0'
   // Banco (solo si tipo_avaluo === '2.0'; null cuando es modo libre "otro")
   banco_id?: string | null
+  // Uso de suelo: si la propiedad está en Querétaro lo asigna el sistema
+  // automáticamente desde el catálogo `usos_suelo_qro` (clave + nombre).
+  // Si NO es en Qro, el valuador sube imagen y este campo queda null.
+  uso_suelo?: string | null
+  uso_suelo_auto?: boolean
   // Dirección extraída por la IA
   calle: string
   numero_ext?: string
