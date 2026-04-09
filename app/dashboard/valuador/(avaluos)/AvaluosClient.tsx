@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import { guardarAvaluo } from '@/util/supabase/actions';
 import { createClient } from '@/util/supabase/client';
 import ValuadorTopbar from '../ValuadorTopbar';
@@ -55,6 +56,8 @@ interface ResultadoDocumento {
   id: string;
   nombre: string;
   valido: boolean;
+  tipo_detectado?: string;     // Tipo REAL que la IA identificó (puede no coincidir con el slot)
+  tipo_coincide?: boolean;     // false → mismatch entre slot y archivo
   datos_extraidos: Record<string, string | null>;
   errores: string[];
 }
@@ -112,7 +115,7 @@ export default function AvaluosClient() {
   const [analizando, setAnalizando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoAnalisis | null>(null);
   const [guardando, setGuardando] = useState(false);
-  const [guardadoResult, setGuardadoResult] = useState<{ exito: boolean; folio?: string; error?: string } | null>(null);
+  const [guardadoResult, setGuardadoResult] = useState<{ exito: boolean; folio?: string; avaluo_id?: string; error?: string } | null>(null);
 
   // Override manual del valuador: cuando la IA bloquea pero el valuador
   // tiene contexto adicional y quiere seguir adelante bajo su responsabilidad.
@@ -220,6 +223,8 @@ export default function AvaluosClient() {
   const usoSueloListo =
     !validacionAprobada
       ? true                                                  // todavía no aplica
+      : validacionManual
+      ? true                                                  // override: uso de suelo es opcional
       : inmuebleEnQro
       ? !!usoSueloSeleccionado                                // requiere selección del catálogo
       : !!usoSueloFile;                                       // requiere imagen subida
@@ -325,21 +330,77 @@ export default function AvaluosClient() {
       formData.append('docNombres', doc.nombre);
     });
 
+    // Helper local: construye un ResultadoAnalisis "vacío" con un mensaje de error
+    // específico en errores_bloqueantes. Lo usamos para todos los modos de fallo.
+    const resultadoConError = (mensaje: string): ResultadoAnalisis => ({
+      valido: false,
+      errores_bloqueantes: [mensaje],
+      documentos: [],
+      datos_consolidados: {
+        propietario: null,
+        ubicacion: null,
+        clave_catastral: null,
+        superficie: null,
+        valor_estimado: null,
+        observaciones: null,
+      },
+    });
+
     try {
       const res = await fetch('/api/analizar-avaluo', { method: 'POST', body: formData });
-      const data: ResultadoAnalisis = await res.json();
+
+      // Intentar parsear JSON aunque el status no sea 2xx — el endpoint devuelve
+      // { error: "..." } también en errores. Si el body no es JSON válido,
+      // capturamos el texto crudo para mostrarlo.
+      let raw: unknown;
+      try {
+        raw = await res.json();
+      } catch {
+        const texto = await res.text().catch(() => '');
+        setResultado(resultadoConError(
+          `La API respondió con estado ${res.status} pero el cuerpo no es JSON válido${texto ? `: ${texto.slice(0, 200)}` : '.'}`
+        ));
+        return;
+      }
+
+      // Si el endpoint devolvió un error explícito, lo mostramos directo
+      if (!res.ok) {
+        const r = raw as { error?: string; raw?: string } | null;
+        const mensaje = r?.error
+          ? `Error de la IA (${res.status}): ${r.error}`
+          : `Error de la IA (${res.status}). Revisa los logs del servidor o intenta de nuevo.`;
+        setResultado(resultadoConError(mensaje));
+        return;
+      }
+
+      // Status OK: sanitizar la respuesta. La IA debería devolver el shape completo
+      // pero por defensa garantizamos arrays no-undefined y datos_consolidados completo.
+      const r = raw as Partial<ResultadoAnalisis> & { error?: string };
+      const data: ResultadoAnalisis = {
+        valido: typeof r?.valido === 'boolean' ? r.valido : false,
+        errores_bloqueantes: Array.isArray(r?.errores_bloqueantes)
+          ? r.errores_bloqueantes
+          : (r?.error ? [String(r.error)] : ['La IA devolvió una respuesta inválida (sin errores_bloqueantes).']),
+        documentos: Array.isArray(r?.documentos) ? r.documentos : [],
+        datos_consolidados: {
+          propietario:     r?.datos_consolidados?.propietario     ?? null,
+          ubicacion:       r?.datos_consolidados?.ubicacion       ?? null,
+          clave_catastral: r?.datos_consolidados?.clave_catastral ?? null,
+          superficie:      r?.datos_consolidados?.superficie      ?? null,
+          valor_estimado:  r?.datos_consolidados?.valor_estimado  ?? null,
+          observaciones:   r?.datos_consolidados?.observaciones   ?? null,
+        },
+      };
       setResultado(data);
       if (data.valido) {
-        if (data.datos_consolidados?.valor_estimado) setValorBase(data.datos_consolidados.valor_estimado);
-        if (data.datos_consolidados?.observaciones) setNotasRiesgo(data.datos_consolidados.observaciones);
+        if (data.datos_consolidados.valor_estimado) setValorBase(data.datos_consolidados.valor_estimado);
+        if (data.datos_consolidados.observaciones) setNotasRiesgo(data.datos_consolidados.observaciones);
       }
-    } catch {
-      setResultado({
-        valido: false,
-        errores_bloqueantes: ['Error de red. Verifica tu conexión e intenta de nuevo.'],
-        documentos: [],
-        datos_consolidados: { propietario: null, ubicacion: null, clave_catastral: null, superficie: null, valor_estimado: null, observaciones: null },
-      });
+    } catch (err) {
+      const mensaje = err instanceof Error
+        ? `Error de red: ${err.message}`
+        : 'Error de red desconocido. Verifica tu conexión e intenta de nuevo.';
+      setResultado(resultadoConError(mensaje));
     } finally {
       setAnalizando(false);
     }
@@ -654,7 +715,7 @@ export default function AvaluosClient() {
                             </div>
                           )}
                           {docsCustom.map((doc) => {
-                            const docRes = resultado?.documentos.find((d) => d.id === doc.id);
+                            const docRes = resultado?.documentos?.find((d) => d.id === doc.id);
                             return (
                               <div
                                 key={doc.id}
@@ -728,7 +789,7 @@ export default function AvaluosClient() {
                         <div className="space-y-2">
                           {docsRequeridos.map((doc) => {
                             const archivoActual = archivosSlots[doc.id];
-                            const docRes = resultado?.documentos.find((d) => d.id === doc.id);
+                            const docRes = resultado?.documentos?.find((d) => d.id === doc.id);
 
                             return (
                               <div
@@ -750,7 +811,12 @@ export default function AvaluosClient() {
                                     {archivoActual && (
                                       <p className="text-[10px] text-slate-400 truncate">{archivoActual.name}</p>
                                     )}
-                                    {docRes && !docRes.valido && docRes.errores[0] && (
+                                    {docRes && docRes.tipo_coincide === false && docRes.tipo_detectado && (
+                                      <p className="text-[10px] text-red-600 font-black truncate">
+                                        ✗ Tipo detectado: {docRes.tipo_detectado}
+                                      </p>
+                                    )}
+                                    {docRes && !docRes.valido && docRes.errores?.[0] && (
                                       <p className="text-[10px] text-red-500 font-semibold truncate">⚠ {docRes.errores[0]}</p>
                                     )}
                                   </div>
@@ -828,10 +894,10 @@ export default function AvaluosClient() {
                     </div>
 
                     {/* Errores bloqueantes */}
-                    {resultado && !resultado.valido && resultado.errores_bloqueantes.length > 0 && (
+                    {resultado && !resultado.valido && (resultado.errores_bloqueantes?.length ?? 0) > 0 && (
                       <div className="border-t border-red-100 bg-red-50 px-5 py-4">
                         <p className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-2">⚠ Expediente Bloqueado</p>
-                        {resultado.errores_bloqueantes.map((err, i) => (
+                        {resultado.errores_bloqueantes!.map((err, i) => (
                           <p key={i} className="text-xs text-red-600 font-semibold leading-snug">• {err}</p>
                         ))}
                       </div>
@@ -858,27 +924,29 @@ export default function AvaluosClient() {
                             </p>
                           </div>
                         </div>
+                        <label className="block text-[10px] font-black text-red-700 uppercase tracking-widest mb-1.5">
+                          Motivo (opcional pero recomendado)
+                        </label>
                         <textarea
-                          value={motivoOverride}
+                          value={motivoOverride ?? ''}
                           onChange={(e) => setMotivoOverride(e.target.value)}
-                          placeholder="Explica con detalle por qué el expediente es válido a pesar de los errores que la IA reportó. Ej: 'Verifiqué con el cliente que es la misma persona — los apellidos están en distinto orden en el Título y en la Boleta Predial.'"
-                          className="w-full text-xs text-slate-800 bg-white border-2 border-red-300 rounded-lg px-3 py-2.5 placeholder:text-red-300 focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-red-500 min-h-[80px] resize-none font-medium"
+                          placeholder="Ej: 'Verifiqué con el cliente que es la misma persona, los apellidos están en distinto orden en el Título vs la Boleta Predial.'"
+                          rows={3}
+                          className="w-full text-xs text-slate-800 bg-white border-2 border-red-300 rounded-lg px-3 py-2.5 placeholder:text-red-300 focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-red-500 resize-none font-medium block"
                         />
-                        <div className="flex items-center justify-between mt-3 gap-3">
-                          <p className={`text-[10px] font-black uppercase tracking-widest ${
-                            motivoOverride.trim().length >= 20 ? 'text-red-600' : 'text-red-300'
-                          }`}>
-                            {motivoOverride.trim().length}/20 caracteres mínimos
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => setValidacionManual(true)}
-                            disabled={motivoOverride.trim().length < 20}
-                            className="bg-red-600 hover:bg-red-700 disabled:bg-red-200 disabled:text-red-400 text-white text-[10px] font-black uppercase tracking-widest px-5 py-2.5 rounded-lg transition shrink-0 shadow-lg shadow-red-300/50 disabled:shadow-none border-2 border-red-700 disabled:border-red-200"
-                          >
-                            ⚠ DAR LUZ VERDE
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Si no escribió motivo, ponemos un default explícito en el registro
+                            if (!motivoOverride.trim()) {
+                              setMotivoOverride('Validación manual sin motivo especificado por el valuador.');
+                            }
+                            setValidacionManual(true);
+                          }}
+                          className="mt-3 w-full bg-red-600 hover:bg-red-700 active:bg-red-800 text-white text-xs font-black uppercase tracking-widest px-5 py-3 rounded-lg transition shadow-lg shadow-red-300/50 border-2 border-red-700 cursor-pointer"
+                        >
+                          ⚠ DAR LUZ VERDE BAJO MI RESPONSABILIDAD
+                        </button>
                       </div>
                     )}
 
@@ -1084,30 +1152,58 @@ export default function AvaluosClient() {
 
                 {/* Feedback guardado */}
                 {guardadoResult && (
-                  <div className={`rounded-2xl p-4 border text-xs font-semibold ${
+                  <div className={`rounded-2xl border ${
                     guardadoResult.exito
-                      ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                      : 'bg-red-50 border-red-200 text-red-700'
+                      ? 'bg-emerald-50 border-emerald-200'
+                      : 'bg-red-50 border-red-200'
                   }`}>
                     {guardadoResult.exito ? (
-                      <>
-                        <p className="font-black">✓ Avalúo guardado</p>
-                        {guardadoResult.folio && (
-                          <p className="mt-0.5 text-[10px]">Folio: <span className="font-black">{guardadoResult.folio}</span></p>
+                      <div className="p-4 space-y-3">
+                        <div>
+                          <p className="text-xs font-black text-emerald-700">✓ Avalúo guardado</p>
+                          {guardadoResult.folio && (
+                            <p className="mt-0.5 text-[10px] text-emerald-700/80 font-semibold">
+                              Folio: <span className="font-black">{guardadoResult.folio}</span>
+                            </p>
+                          )}
+                          <p className="mt-2 text-[10px] text-emerald-700/80 leading-snug">
+                            Estado actual: <span className="font-black">CAPTURA</span>. El siguiente paso es
+                            agendar la visita al inmueble desde el detalle del expediente.
+                          </p>
+                        </div>
+
+                        {guardadoResult.avaluo_id && (
+                          <Link
+                            href={`/dashboard/valuador/expedientes/${guardadoResult.avaluo_id}`}
+                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest px-4 py-2.5 rounded-lg transition flex items-center justify-center gap-2 shadow shadow-emerald-200/50"
+                          >
+                            Continuar al expediente
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                            </svg>
+                          </Link>
                         )}
-                      </>
+
+                        <button
+                          type="button"
+                          onClick={limpiarTodo}
+                          className="w-full text-[10px] font-bold text-emerald-700/70 hover:text-emerald-900 uppercase tracking-widest underline"
+                        >
+                          O crear otro avalúo
+                        </button>
+                      </div>
                     ) : (
-                      <p>✗ {guardadoResult.error}</p>
+                      <p className="p-4 text-xs font-semibold text-red-700">✗ {guardadoResult.error}</p>
                     )}
                   </div>
                 )}
 
-                {/* Uso de suelo (solo después de validación con IA) */}
-                {resultado?.valido && (
+                {/* Uso de suelo (después de validación con IA o de override manual) */}
+                {validacionAprobada && (
                   <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-3">
                     <div className="flex items-center justify-between">
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        Uso de suelo
+                        Uso de suelo {validacionManual && <span className="text-red-500 normal-case font-semibold">(opcional en override)</span>}
                       </p>
                       {inmuebleEnQro ? (
                         <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
