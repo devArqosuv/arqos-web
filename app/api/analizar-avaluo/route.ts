@@ -139,11 +139,16 @@ REGLA NÚMERO UNO — INDISPENSABLE — IDENTIFICACIÓN DE TIPO
 Antes de extraer ningún dato, para CADA documento debes ejecutar estos pasos en orden:
 
 PASO A — IDENTIFICAR EL TIPO REAL DEL ARCHIVO:
+IGNORA POR COMPLETO el nombre del archivo (ej: "TITULO.pdf", "BOLETA.jpg", "ACREDITACION.pdf").
+Los nombres son inventados por el valuador y NO son evidencia válida — pueden mentir.
+Tu identificación debe basarse 100% en el CONTENIDO VISIBLE del documento.
+
 NO asumas que el archivo es lo que dice el slot del sistema. Examina el contenido visual:
   • Header / título / membrete (gobierno, notaría, banco, utility company, dependencia)
   • Logos y sellos oficiales
   • Estructura visual (tarjeta plástica, recibo, hoja notarial, mapa, foto, hoja de cálculo)
   • Etiquetas de los campos y la palabra clave del documento
+  • Texto del cuerpo del documento
 
 GUÍA DE TIPOS COMUNES EN AVALÚOS MEXICANOS:
 
@@ -157,14 +162,34 @@ GUÍA DE TIPOS COMUNES EN AVALÚOS MEXICANOS:
     - Suele ser de varias páginas
     - NO confundir con: solicitud de crédito, aviso de instrucción, oficio, mapa, foto
 
-  ▸ BOLETA PREDIAL / CÉDULA CATASTRAL:
-    - Recibo o constancia oficial del MUNICIPIO o catastro estatal
-    - Header de la Tesorería Municipal o dependencia de Catastro
-    - Tiene la palabra "PREDIAL", "IMPUESTO PREDIAL", "CÉDULA CATASTRAL" o "BOLETA PREDIAL" en el header
-    - Contiene CLAVE CATASTRAL (formato: 14-001-001-178-7017 o similar 14 dígitos)
-    - Muestra periodos de pago (bimestres/anualidad), importes, recargos, descuentos
-    - Nombre del propietario empadronado y dirección del inmueble
-    - NO confundir con: mapa de macrolocalización, plano arquitectónico, recibo de agua/luz, foto del terreno
+  ▸ BOLETA PREDIAL / CÉDULA CATASTRAL / RECIBO DE PAGO PREDIAL:
+    Tres variantes igualmente VÁLIDAS para este slot. Acepta CUALQUIERA:
+
+    Variante 1 — BOLETA / CÉDULA CATASTRAL:
+      - Constancia oficial del MUNICIPIO o catastro estatal
+      - Header de la Tesorería Municipal o dependencia de Catastro
+      - Palabras clave: "CÉDULA CATASTRAL", "BOLETA PREDIAL", "CONSTANCIA CATASTRAL"
+      - Datos del predio: clave catastral, propietario, ubicación, superficie
+
+    Variante 2 — RECIBO DE PAGO DEL IMPUESTO PREDIAL:
+      - Comprobante de pago emitido por la Tesorería Municipal
+      - Header del municipio o sistema de pagos municipal
+      - Palabras clave: "IMPUESTO PREDIAL", "PAGO PREDIAL", "RECIBO PREDIAL", "PAGO DE PREDIAL"
+      - Muestra: periodo pagado (bimestre/anual), monto, fecha de pago, sello o folio de pago
+      - Tiene CLAVE CATASTRAL y nombre del contribuyente
+      - ESTE TIPO ES VÁLIDO COMO BOLETA PREDIAL — el recibo demuestra que el predial está pagado y contiene los mismos datos clave
+
+    Variante 3 — ESTADO DE CUENTA PREDIAL:
+      - Documento de la Tesorería Municipal con saldo pendiente o adeudo
+      - Tiene clave catastral, propietario, periodos
+      - También VÁLIDO
+
+    Para CUALQUIERA de las 3 variantes:
+      - DEBE contener CLAVE CATASTRAL (formato típico 14 dígitos: 14-001-001-178-7017)
+      - DEBE mencionar al propietario o contribuyente
+      - DEBE referirse al impuesto predial / catastro
+
+    NO confundir con: mapa de macrolocalización, plano arquitectónico, recibo de agua (CEA/JAPAC), recibo de luz (CFE), foto del terreno, escritura notarial.
 
   ▸ IDENTIFICACIÓN OFICIAL (INE / IFE / Pasaporte / Cédula Profesional):
     - DEBE ser una credencial oficial reconocida en México
