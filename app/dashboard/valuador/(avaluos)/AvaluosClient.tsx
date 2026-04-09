@@ -104,7 +104,6 @@ export default function AvaluosClient() {
   const [bancosCargando, setBancosCargando] = useState(false);
   const [bancoSeleccionado, setBancoSeleccionado] = useState<BancoId>('');
   const [bancoDropdownAbierto, setBancoDropdownAbierto] = useState(false);
-  const [archivosSlots, setArchivosSlots] = useState<Record<string, File | null>>({});
   const [docsCustom, setDocsCustom] = useState<DocCustom[]>([]);
 
   // Uso de suelo (geofence Querétaro)
@@ -204,8 +203,6 @@ export default function AvaluosClient() {
     return () => document.removeEventListener('mousedown', handler);
   }, [bancoDropdownAbierto]);
 
-  const esModoCustom = tipoAvaluo === '2.0' && bancoSeleccionado === BANCO_OTRO;
-
   const bancoActual = bancos.find((b) => b.id === bancoSeleccionado);
 
   // ── Geofence Querétaro ────────────────────────────────────
@@ -229,20 +226,12 @@ export default function AvaluosClient() {
       ? !!usoSueloSeleccionado                                // requiere selección del catálogo
       : !!usoSueloFile;                                       // requiere imagen subida
 
-  const docsRequeridos: DocumentoRequerido[] =
-    tipoAvaluo === '1.0'
-      ? DOCS_TIPO_1
-      : tipoAvaluo === '2.0' && bancoActual
-      ? bancoActual.banco_documentos.map((d) => ({ id: d.id, nombre: d.nombre }))
-      : [];
-
-  const archivosSubidos = esModoCustom
-    ? docsCustom.filter((d) => d.file && d.nombre.trim()).length
-    : docsRequeridos.filter((d) => archivosSlots[d.id]).length;
-  const totalDocs = esModoCustom ? docsCustom.length : docsRequeridos.length;
-  const todosSubidos = esModoCustom
-    ? docsCustom.length > 0 && docsCustom.every((d) => d.file && d.nombre.trim())
-    : docsRequeridos.length > 0 && archivosSubidos === docsRequeridos.length;
+  // Toda la lógica de slots vive ahora en docsCustom — sin importar si vino
+  // de un preset (Tipo 1.0 / banco) o si el valuador los agregó manualmente.
+  const archivosSubidos = docsCustom.filter((d) => d.file && d.nombre.trim()).length;
+  const totalDocs = docsCustom.length;
+  const todosSubidos =
+    docsCustom.length > 0 && docsCustom.every((d) => d.file && d.nombre.trim());
 
   const mostrarPasoDocumentos =
     tipoAvaluo === '1.0' || (tipoAvaluo === '2.0' && bancoSeleccionado !== '');
@@ -252,29 +241,40 @@ export default function AvaluosClient() {
     setUsoSueloFile(null);
   };
 
+  // Convierte un arreglo de slots predefinidos en docsCustom editables
+  // (sin archivos cargados todavía).
+  const seedDocsCustom = (slots: { id: string; nombre: string }[]) =>
+    slots.map((s) => ({ id: s.id, nombre: s.nombre, file: null as File | null }));
+
   const handleTipoChange = (tipo: TipoAvaluo) => {
     setTipoAvaluo(tipo);
     setBancoSeleccionado('');
-    setArchivosSlots({});
-    setDocsCustom([]);
     setResultado(null);
     setGuardadoResult(null);
     resetUsoSuelo();
+    // Tipo 1.0 trae los 3 docs predefinidos. Tipo 2.0 espera a que elijan banco.
+    if (tipo === '1.0') {
+      setDocsCustom(seedDocsCustom(DOCS_TIPO_1));
+    } else {
+      setDocsCustom([]);
+    }
   };
 
   const handleBancoChange = (banco: BancoId) => {
     setBancoSeleccionado(banco);
-    setArchivosSlots({});
-    setDocsCustom([]);
     setResultado(null);
     setGuardadoResult(null);
     resetUsoSuelo();
-  };
-
-  const handleFileSlot = (id: string, file: File | null) => {
-    setArchivosSlots((prev) => ({ ...prev, [id]: file }));
-    setResultado(null);
-    setGuardadoResult(null);
+    // Si es un banco real, cargamos sus docs como punto de partida editable.
+    // Si eligen "otro", queda en blanco para que añadan los que quieran.
+    if (banco !== BANCO_OTRO) {
+      const bancoEncontrado = bancos.find((b) => b.id === banco);
+      if (bancoEncontrado) {
+        setDocsCustom(seedDocsCustom(bancoEncontrado.banco_documentos));
+        return;
+      }
+    }
+    setDocsCustom([]);
   };
 
   const agregarDocCustom = () => {
@@ -316,13 +316,9 @@ export default function AvaluosClient() {
       formData.append('banco', bancoSeleccionado);
     }
 
-    const docsParaEnviar: { id: string; nombre: string; file: File }[] = esModoCustom
-      ? docsCustom
-          .filter((d): d is DocCustom & { file: File } => !!d.file && !!d.nombre.trim())
-          .map((d) => ({ id: d.id, nombre: d.nombre.trim(), file: d.file }))
-      : docsRequeridos
-          .map((doc) => ({ id: doc.id, nombre: doc.nombre, file: archivosSlots[doc.id] }))
-          .filter((d): d is { id: string; nombre: string; file: File } => !!d.file);
+    const docsParaEnviar: { id: string; nombre: string; file: File }[] = docsCustom
+      .filter((d): d is DocCustom & { file: File } => !!d.file && !!d.nombre.trim())
+      .map((d) => ({ id: d.id, nombre: d.nombre.trim(), file: d.file }));
 
     docsParaEnviar.forEach((doc) => {
       formData.append('pdfs', doc.file);
@@ -455,13 +451,9 @@ export default function AvaluosClient() {
       uso_suelo_auto: usoSueloAuto,
     };
 
-    const archivosBase = esModoCustom
-      ? docsCustom
-          .filter((d): d is DocCustom & { file: File } => !!d.file && !!d.nombre.trim())
-          .map((d) => ({ docId: d.id, docNombre: d.nombre.trim(), file: d.file }))
-      : docsRequeridos
-          .filter((doc) => archivosSlots[doc.id])
-          .map((doc) => ({ docId: doc.id, docNombre: doc.nombre, file: archivosSlots[doc.id]! }));
+    const archivosBase = docsCustom
+      .filter((d): d is DocCustom & { file: File } => !!d.file && !!d.nombre.trim())
+      .map((d) => ({ docId: d.id, docNombre: d.nombre.trim(), file: d.file }));
 
     // Si NO es Querétaro y subió imagen de uso de suelo, la agregamos con categoría especial
     const archivos = (!inmuebleEnQro && usoSueloFile)
@@ -507,7 +499,6 @@ export default function AvaluosClient() {
   const limpiarTodo = () => {
     setTipoAvaluo('');
     setBancoSeleccionado('');
-    setArchivosSlots({});
     setDocsCustom([]);
     setResultado(null);
     setValorBase('');
@@ -728,150 +719,96 @@ export default function AvaluosClient() {
                         </span>
                       </div>
 
-                      {esModoCustom ? (
-                        <div className="space-y-2">
-                          {docsCustom.length === 0 && (
-                            <div className="py-6 text-center border-2 border-dashed border-slate-200 rounded-xl">
-                              <p className="text-xs text-slate-400 font-semibold">
-                                Sube los documentos que necesites para este avalúo
-                              </p>
+                      {/* Lista unificada de documentos: siempre editable.
+                          Los slots vienen precargados según tipo/banco pero
+                          el valuador puede renombrarlos, agregarlos o borrarlos. */}
+                      <div className="space-y-2">
+                        {docsCustom.length === 0 && (
+                          <div className="py-6 text-center border-2 border-dashed border-slate-200 rounded-xl">
+                            <p className="text-xs text-slate-400 font-semibold">
+                              Agrega los documentos del expediente
+                            </p>
+                          </div>
+                        )}
+                        {docsCustom.map((doc) => {
+                          const docRes = resultado?.documentos?.find((d) => d.id === doc.id);
+                          return (
+                            <div
+                              key={doc.id}
+                              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all ${
+                                docRes
+                                  ? docRes.valido
+                                    ? 'border-emerald-200 bg-emerald-50'
+                                    : 'border-red-200 bg-red-50'
+                                  : doc.file
+                                  ? 'border-slate-200 bg-slate-50'
+                                  : 'border-slate-100 bg-white'
+                              }`}
+                            >
+                              <IconPDF />
+                              <div className="flex-1 min-w-0">
+                                <input
+                                  type="text"
+                                  value={doc.nombre}
+                                  onChange={(e) => actualizarDocCustomNombre(doc.id, e.target.value)}
+                                  placeholder="Nombre del documento"
+                                  className="w-full text-xs font-bold text-slate-800 bg-transparent border-none outline-none placeholder:text-slate-400 placeholder:font-semibold"
+                                />
+                                {doc.file && (
+                                  <p className="text-[10px] text-slate-400 truncate">{doc.file.name}</p>
+                                )}
+                                {docRes && docRes.tipo_coincide === false && docRes.tipo_detectado && (
+                                  <p className="text-[10px] text-red-600 font-black truncate">
+                                    ✗ Tipo detectado: {docRes.tipo_detectado}
+                                  </p>
+                                )}
+                                {docRes && !docRes.valido && docRes.errores?.[0] && (
+                                  <p className="text-[10px] text-red-500 font-semibold truncate">⚠ {docRes.errores[0]}</p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                {docRes?.valido && (
+                                  <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                                )}
+                                <input
+                                  type="file"
+                                  accept="application/pdf,image/jpeg,image/png,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.xlsx,.xls"
+                                  className="hidden"
+                                  ref={(el) => { fileInputRefs.current[doc.id] = el; }}
+                                  onChange={(e) => actualizarDocCustomFile(doc.id, e.target.files?.[0] || null)}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => fileInputRefs.current[doc.id]?.click()}
+                                  className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition whitespace-nowrap ${
+                                    doc.file
+                                      ? 'text-slate-600 border border-slate-300 hover:bg-slate-100'
+                                      : 'text-blue-600 border border-blue-200 hover:bg-blue-50'
+                                  }`}
+                                >
+                                  {doc.file ? 'Cambiar' : 'Subir archivo'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => eliminarDocCustom(doc.id)}
+                                  className="text-slate-400 hover:text-red-500 transition p-1"
+                                  aria-label="Eliminar documento"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                              </div>
                             </div>
-                          )}
-                          {docsCustom.map((doc) => {
-                            const docRes = resultado?.documentos?.find((d) => d.id === doc.id);
-                            return (
-                              <div
-                                key={doc.id}
-                                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border transition-all ${
-                                  docRes
-                                    ? docRes.valido
-                                      ? 'border-emerald-200 bg-emerald-50'
-                                      : 'border-red-200 bg-red-50'
-                                    : doc.file
-                                    ? 'border-slate-200 bg-slate-50'
-                                    : 'border-slate-100 bg-white'
-                                }`}
-                              >
-                                <IconPDF />
-                                <div className="flex-1 min-w-0">
-                                  <input
-                                    type="text"
-                                    value={doc.nombre}
-                                    onChange={(e) => actualizarDocCustomNombre(doc.id, e.target.value)}
-                                    placeholder="Nombre del documento"
-                                    className="w-full text-xs font-bold text-slate-800 bg-transparent border-none outline-none placeholder:text-slate-400 placeholder:font-semibold"
-                                  />
-                                  {doc.file && (
-                                    <p className="text-[10px] text-slate-400 truncate">{doc.file.name}</p>
-                                  )}
-                                  {docRes && !docRes.valido && docRes.errores[0] && (
-                                    <p className="text-[10px] text-red-500 font-semibold truncate">⚠ {docRes.errores[0]}</p>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <input
-                                    type="file"
-                                    accept="application/pdf,image/jpeg,image/png,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.xlsx,.xls"
-                                    className="hidden"
-                                    ref={(el) => { fileInputRefs.current[doc.id] = el; }}
-                                    onChange={(e) => actualizarDocCustomFile(doc.id, e.target.files?.[0] || null)}
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => fileInputRefs.current[doc.id]?.click()}
-                                    className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition whitespace-nowrap ${
-                                      doc.file
-                                        ? 'text-slate-600 border border-slate-300 hover:bg-slate-100'
-                                        : 'text-blue-600 border border-blue-200 hover:bg-blue-50'
-                                    }`}
-                                  >
-                                    {doc.file ? 'Cambiar' : 'Subir archivo'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => eliminarDocCustom(doc.id)}
-                                    className="text-slate-400 hover:text-red-500 transition p-1"
-                                    aria-label="Eliminar documento"
-                                  >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          <button
-                            type="button"
-                            onClick={agregarDocCustom}
-                            className="w-full flex items-center justify-center gap-2 text-xs font-bold text-slate-600 border-2 border-dashed border-slate-200 hover:border-slate-400 hover:bg-slate-50 rounded-xl py-3 transition"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
-                            Agregar documento
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {docsRequeridos.map((doc) => {
-                            const archivoActual = archivosSlots[doc.id];
-                            const docRes = resultado?.documentos?.find((d) => d.id === doc.id);
-
-                            return (
-                              <div
-                                key={doc.id}
-                                className={`flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all ${
-                                  docRes
-                                    ? docRes.valido
-                                      ? 'border-emerald-200 bg-emerald-50'
-                                      : 'border-red-200 bg-red-50'
-                                    : archivoActual
-                                    ? 'border-slate-200 bg-slate-50'
-                                    : 'border-slate-100 bg-white'
-                                }`}
-                              >
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                  <IconPDF />
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-bold text-slate-800 truncate">{doc.nombre}</p>
-                                    {archivoActual && (
-                                      <p className="text-[10px] text-slate-400 truncate">{archivoActual.name}</p>
-                                    )}
-                                    {docRes && docRes.tipo_coincide === false && docRes.tipo_detectado && (
-                                      <p className="text-[10px] text-red-600 font-black truncate">
-                                        ✗ Tipo detectado: {docRes.tipo_detectado}
-                                      </p>
-                                    )}
-                                    {docRes && !docRes.valido && docRes.errores?.[0] && (
-                                      <p className="text-[10px] text-red-500 font-semibold truncate">⚠ {docRes.errores[0]}</p>
-                                    )}
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-2 shrink-0">
-                                  {docRes?.valido && (
-                                    <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
-                                  )}
-                                  <input
-                                    type="file"
-                                    accept="application/pdf,image/jpeg,image/png,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.xlsx,.xls"
-                                    className="hidden"
-                                    ref={(el) => { fileInputRefs.current[doc.id] = el; }}
-                                    onChange={(e) => handleFileSlot(doc.id, e.target.files?.[0] || null)}
-                                  />
-                                  <button
-                                    onClick={() => fileInputRefs.current[doc.id]?.click()}
-                                    className={`text-[10px] font-bold px-3 py-1.5 rounded-lg transition whitespace-nowrap ${
-                                      archivoActual
-                                        ? 'text-slate-600 border border-slate-300 hover:bg-slate-100'
-                                        : 'text-blue-600 border border-blue-200 hover:bg-blue-50'
-                                    }`}
-                                  >
-                                    {archivoActual ? 'Cambiar' : 'Subir archivo'}
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                          );
+                        })}
+                        <button
+                          type="button"
+                          onClick={agregarDocCustom}
+                          className="w-full flex items-center justify-center gap-2 text-xs font-bold text-slate-600 border-2 border-dashed border-slate-200 hover:border-slate-400 hover:bg-slate-50 rounded-xl py-3 transition"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" /></svg>
+                          Agregar documento
+                        </button>
+                      </div>
 
                       {/* Barra de progreso */}
                       <div className="mt-4 h-1 bg-slate-100 rounded-full overflow-hidden">
@@ -908,7 +845,7 @@ export default function AvaluosClient() {
                             </svg>
                             ANALIZAR CON IA
                           </>
-                        ) : esModoCustom && docsCustom.length === 0 ? (
+                        ) : docsCustom.length === 0 ? (
                           'AGREGA AL MENOS UN DOCUMENTO'
                         ) : (
                           `FALTAN ${totalDocs - archivosSubidos} DOCUMENTO(S)`
