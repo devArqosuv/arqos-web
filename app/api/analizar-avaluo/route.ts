@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as XLSX from 'xlsx';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'anthropic/claude-sonnet-4-5';
@@ -15,7 +16,23 @@ const MIME_PERMITIDOS: Record<string, string> = {
   jpg:  'image/jpeg',
   jpeg: 'image/jpeg',
   png:  'image/png',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  xls:  'application/vnd.ms-excel',
 };
+
+// Convierte un buffer XLSX/XLS a texto Markdown legible para la IA.
+// Cada hoja se renderiza como una sección con su nombre + tabla CSV.
+function xlsxBufferToMarkdown(buffer: ArrayBuffer): string {
+  const wb = XLSX.read(buffer, { type: 'array' });
+  const partes: string[] = [];
+  for (const nombreHoja of wb.SheetNames) {
+    const hoja = wb.Sheets[nombreHoja];
+    const csv = XLSX.utils.sheet_to_csv(hoja, { blankrows: false }).trim();
+    if (!csv) continue;
+    partes.push(`### Hoja: ${nombreHoja}\n\n${csv}`);
+  }
+  return partes.length > 0 ? partes.join('\n\n') : '(hoja de cálculo vacía)';
+}
 
 function detectarMime(fileName: string, fallback: string): string {
   const ext = (fileName.split('.').pop() || '').toLowerCase();
@@ -44,18 +61,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Tipo de avalúo inválido.' }, { status: 400 });
     }
 
-    // Convertir cada archivo (PDF o imagen) a base64 + detectar MIME
+    // Convertir cada archivo. Para PDF/imagen → base64. Para XLSX → texto Markdown server-side.
     const documentos = await Promise.all(
       files.map(async (file, index) => {
         const bytes = await file.arrayBuffer();
-        const base64 = Buffer.from(bytes).toString('base64');
         const mime = detectarMime(file.name, file.type || 'application/octet-stream');
+        const esExcel =
+          mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+          mime === 'application/vnd.ms-excel';
         return {
           id: docIds[index],
           nombre: docNombres[index],
           fileName: file.name,
-          base64,
           mime,
+          // Sólo guardamos base64 cuando es PDF/imagen (lo necesita el contenido multimodal)
+          base64: esExcel ? null : Buffer.from(bytes).toString('base64'),
+          // Sólo convertimos a Markdown cuando es Excel
+          markdown: esExcel ? xlsxBufferToMarkdown(bytes) : null,
         };
       })
     );
@@ -66,12 +88,12 @@ export async function POST(req: NextRequest) {
     );
     if (formatoInvalido) {
       return NextResponse.json(
-        { error: `Formato no soportado en ${formatoInvalido.fileName}. Solo se aceptan PDF, JPG o PNG.` },
+        { error: `Formato no soportado en ${formatoInvalido.fileName}. Solo se aceptan PDF, JPG, PNG o XLSX.` },
         { status: 400 }
       );
     }
 
-    // Construir el contenido multimodal: cada doc etiquetado + PDF como `file` o imagen como `image_url`
+    // Construir el contenido multimodal: cada doc etiquetado + PDF como `file`, imagen como `image_url`, XLSX como texto
     const contentBlocks: ContentPart[] = [];
 
     for (const doc of documentos) {
@@ -79,6 +101,15 @@ export async function POST(req: NextRequest) {
         type: 'text',
         text: `\n===== DOCUMENTO ${doc.id}: ${doc.nombre} (archivo: ${doc.fileName}) =====`,
       });
+
+      if (doc.markdown !== null) {
+        // Hoja de cálculo: la insertamos como bloque de texto tabular
+        contentBlocks.push({
+          type: 'text',
+          text: `\n[Hoja de cálculo extraída del archivo ${doc.fileName}. Trátalo como datos tabulares — extrae las columnas/valores relevantes; no intentes validarlo como Título o Boleta]\n\n${doc.markdown}\n`,
+        });
+        continue;
+      }
 
       const dataUrl = `data:${doc.mime};base64,${doc.base64}`;
 
@@ -136,8 +167,13 @@ CRITERIOS DE VALIDACIÓN Y REFERENCIA CRUZADA:
    - Cruzar nombre y ubicación con el Título.
 
    Para IDENTIFICACIÓN OFICIAL (1.3 o equivalente):
-   - Verificar que sea una identificación vigente (INE, pasaporte, etc.).
-   - Confirmar que el nombre corresponda al propietario del expediente.
+   - Verificar que sea una identificación oficial reconocida (INE/IFE, pasaporte mexicano, cédula profesional).
+   - VIGENCIA: extraer la fecha de vencimiento ("VIGENCIA", "VÁLIDA HASTA", "EXPIRA", etc.) y compararla con la fecha actual (${new Date().toISOString().slice(0, 10)}).
+     · Si la identificación está VENCIDA → ERROR BLOQUEANTE. Menciona la fecha de vencimiento en el error.
+     · Si vence en menos de 30 días → ADVERTENCIA (no bloquea, va en observaciones).
+     · Si no se puede leer la fecha de vigencia → ADVERTENCIA (pide al valuador verificarlo manualmente).
+   - Confirmar que el nombre corresponda al propietario del expediente (cruzar con el Título).
+   - Si es INE, verificar que tenga fotografía y datos básicos legibles (CURP, clave de elector).
 
    Para ESCRITURA COMPLETA (2.1):
    - Verificar datos notariales completos, número de escritura, nombre propietario.
@@ -147,6 +183,12 @@ CRITERIOS DE VALIDACIÓN Y REFERENCIA CRUZADA:
 
 INSTRUCCIÓN CRÍTICA SOBRE DIRECCIONES:
 En México, especialmente en desarrollos ejidales y fraccionamientos nuevos, es NORMAL que la dirección aparezca diferente entre documentos. Enfócate en identificar: mismo ejido/fraccionamiento + mismo lote + misma manzana + mismo municipio. Si estos elementos coinciden, la dirección ES la misma aunque el formato sea completamente diferente.
+
+6. CALIDAD DEL DOCUMENTO (legibilidad):
+   - Si un PDF/imagen está tan borroso, oscuro, cortado o pixelado que NO puedes leer con certeza los campos clave (nombre, ubicación, número de título, clave catastral, fecha) → marca ese documento como NO VÁLIDO con error: "Documento ilegible: [describe qué campos no se pueden leer]. Se requiere un escaneo de mejor calidad."
+   - NO adivines valores cuando el texto es ilegible. Prefiere devolver null en "datos_extraidos" y explicar en "errores" que el campo no era legible.
+   - Si MÁS DEL 50% de los campos clave de un documento son ilegibles → es un ERROR BLOQUEANTE a nivel expediente, no sólo una advertencia del documento.
+   - Documentos en blanco, archivos corruptos, o que contienen algo distinto al tipo indicado (ej. una foto en lugar del Título) → ERROR BLOQUEANTE.
 
 Responde ÚNICAMENTE con un objeto JSON válido, sin markdown, sin backticks, sin texto extra, con la siguiente estructura:
 

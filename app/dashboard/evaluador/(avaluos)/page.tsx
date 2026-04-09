@@ -661,7 +661,7 @@ export default function EvaluadorDashboard() {
                                 <div className="flex items-center gap-2 shrink-0">
                                   <input
                                     type="file"
-                                    accept="application/pdf,image/jpeg,image/png"
+                                    accept="application/pdf,image/jpeg,image/png,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.xlsx,.xls"
                                     className="hidden"
                                     ref={(el) => { fileInputRefs.current[doc.id] = el; }}
                                     onChange={(e) => actualizarDocCustomFile(doc.id, e.target.files?.[0] || null)}
@@ -736,7 +736,7 @@ export default function EvaluadorDashboard() {
                                   )}
                                   <input
                                     type="file"
-                                    accept="application/pdf,image/jpeg,image/png"
+                                    accept="application/pdf,image/jpeg,image/png,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,.xlsx,.xls"
                                     className="hidden"
                                     ref={(el) => { fileInputRefs.current[doc.id] = el; }}
                                     onChange={(e) => handleFileSlot(doc.id, e.target.files?.[0] || null)}
