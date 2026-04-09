@@ -100,65 +100,68 @@ export async function guardarAvaluo(
   }
   console.log('[guardarAvaluo] avalúo creado:', avaluo.id, avaluo.folio)
 
-  // 6. Subir los archivos (PDF o JPG/PNG) al Storage de Supabase
-  console.log(`[guardarAvaluo] paso 6: subiendo ${archivos.length} archivos al Storage`)
-  const erroresDocumentos: string[] = []
+  // 6. Subir los archivos en PARALELO (Promise.all) para fitear en el timeout
+  // de 10s del plan Hobby de Vercel. Subir 5 PDFs en serie facilmente rebasa
+  // 10s; en paralelo se hace en el tiempo del upload mas lento (~2-3s).
+  console.log(`[guardarAvaluo] paso 6: subiendo ${archivos.length} archivos al Storage en paralelo`)
 
-  for (let i = 0; i < archivos.length; i++) {
-    const archivo = archivos[i]
-    console.log(`[guardarAvaluo] archivo ${i + 1}/${archivos.length}: ${archivo.docNombre} (${archivo.file.name})`)
-    const extension = (archivo.file.name.split('.').pop() || '').toLowerCase()
-    const contentType = MIME_PERMITIDOS[extension] ?? archivo.file.type ?? 'application/octet-stream'
+  const resultadosUpload = await Promise.all(
+    archivos.map(async (archivo, i) => {
+      const tag = `[guardarAvaluo] archivo ${i + 1}/${archivos.length}`
+      const extension = (archivo.file.name.split('.').pop() || '').toLowerCase()
+      const contentType = MIME_PERMITIDOS[extension] ?? archivo.file.type ?? 'application/octet-stream'
 
-    if (!MIME_PERMITIDOS[extension]) {
-      console.warn(`[guardarAvaluo] formato rechazado: ${extension}`)
-      erroresDocumentos.push(`Formato no permitido en ${archivo.docNombre}: solo PDF, JPG o PNG`)
-      continue
-    }
+      if (!MIME_PERMITIDOS[extension]) {
+        console.warn(`${tag} formato rechazado: ${extension}`)
+        return { ok: false, error: `Formato no permitido en ${archivo.docNombre}: solo PDF, JPG o PNG` }
+      }
 
-    const storagePath = `avaluos/${avaluo.id}/${archivo.docId}-${Date.now()}.${extension}`
+      const storagePath = `avaluos/${avaluo.id}/${archivo.docId}-${Date.now()}.${extension}`
 
-    // Subir el archivo al bucket 'documentos'
-    try {
-      const { error: uploadError } = await supabase.storage
+      // Upload al Storage
+      try {
+        const { error: uploadError } = await supabase.storage
+          .from('documentos')
+          .upload(storagePath, archivo.file, { contentType, upsert: false })
+
+        if (uploadError) {
+          console.error(`${tag} upload falló:`, uploadError)
+          return { ok: false, error: `No se pudo subir ${archivo.docNombre}: ${uploadError.message}` }
+        }
+      } catch (uploadCrash) {
+        console.error(`${tag} excepción durante upload:`, uploadCrash)
+        const msg = uploadCrash instanceof Error ? uploadCrash.message : 'Error desconocido'
+        return { ok: false, error: `Excepción al subir ${archivo.docNombre}: ${msg}` }
+      }
+
+      // Registrar el documento en la tabla documentos
+      const { error: docInsertError } = await supabase
         .from('documentos')
-        .upload(storagePath, archivo.file, {
-          contentType,
-          upsert: false,
+        .insert({
+          avaluo_id:     avaluo.id,
+          nombre:        archivo.docNombre,
+          descripcion:   `Documento ${archivo.docId} del expediente`,
+          bucket:        'documentos',
+          storage_path:  storagePath,
+          tipo_mime:     contentType,
+          tamanio_bytes: archivo.file.size,
+          categoria:     archivo.categoria ?? 'documento',
+          created_by:    user.id,
         })
 
-      if (uploadError) {
-        console.error(`[guardarAvaluo] upload falló:`, uploadError)
-        erroresDocumentos.push(`No se pudo subir ${archivo.docNombre}: ${uploadError.message}`)
-        continue
+      if (docInsertError) {
+        console.error(`${tag} insert documentos falló:`, docInsertError)
+        return { ok: false, error: `Error al registrar ${archivo.docNombre}: ${docInsertError.message}` }
       }
-    } catch (uploadCrash) {
-      console.error(`[guardarAvaluo] excepción durante upload:`, uploadCrash)
-      const msg = uploadCrash instanceof Error ? uploadCrash.message : 'Error desconocido'
-      erroresDocumentos.push(`Excepción al subir ${archivo.docNombre}: ${msg}`)
-      continue
-    }
 
-    // Registrar el documento en la tabla documentos
-    const { error: docInsertError } = await supabase
-      .from('documentos')
-      .insert({
-        avaluo_id:     avaluo.id,
-        nombre:        archivo.docNombre,
-        descripcion:   `Documento ${archivo.docId} del expediente`,
-        bucket:        'documentos',
-        storage_path:  storagePath,
-        tipo_mime:     contentType,
-        tamanio_bytes: archivo.file.size,
-        categoria:     archivo.categoria ?? 'documento',
-        created_by:    user.id,
-      })
+      console.log(`${tag} OK: ${archivo.docNombre}`)
+      return { ok: true as const }
+    })
+  )
 
-    if (docInsertError) {
-      console.error(`[guardarAvaluo] insert documentos falló:`, docInsertError)
-      erroresDocumentos.push(`Error al registrar ${archivo.docNombre}: ${docInsertError.message}`)
-    }
-  }
+  const erroresDocumentos = resultadosUpload
+    .filter((r): r is { ok: false; error: string } => !r.ok)
+    .map((r) => r.error)
   console.log(`[guardarAvaluo] paso 6 completo. errores=${erroresDocumentos.length}`)
 
   // 7. Si hubo errores en documentos, los reportamos pero el avalúo ya quedó guardado
