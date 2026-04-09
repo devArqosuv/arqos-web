@@ -25,13 +25,17 @@ export async function guardarAvaluo(
   payload: CrearAvaluoPayload,
   archivos: ArchivoExpediente[]
 ): Promise<GuardarAvaluoResult> {
+  console.log(`[guardarAvaluo] inicio — ${archivos.length} archivos`)
   const supabase = await createClient()
 
   // 1. Verificar sesión activa
+  console.log('[guardarAvaluo] paso 1: getUser')
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) {
+    console.error('[guardarAvaluo] sin sesión:', authError)
     return { exito: false, error: 'No autenticado. Inicia sesión para continuar.' }
   }
+  console.log('[guardarAvaluo] usuario:', user.id)
 
   // 2. Construir las notas consolidadas (tipo de avalúo + datos extra de la IA)
   const notasConsolidadas = [
@@ -59,6 +63,7 @@ export async function guardarAvaluo(
     : 'otro'
 
   // 5. Insertar el avalúo en la tabla principal
+  console.log('[guardarAvaluo] paso 5: insertando en tabla avaluos')
   const { data: avaluo, error: insertError } = await supabase
     .from('avaluos')
     .insert({
@@ -87,21 +92,26 @@ export async function guardarAvaluo(
     .single()
 
   if (insertError || !avaluo) {
-    console.error('Error al insertar avalúo:', insertError)
+    console.error('[guardarAvaluo] Error al insertar avalúo:', insertError)
     return {
       exito: false,
       error: `Error al guardar el avalúo: ${insertError?.message || 'Error desconocido'}`,
     }
   }
+  console.log('[guardarAvaluo] avalúo creado:', avaluo.id, avaluo.folio)
 
   // 6. Subir los archivos (PDF o JPG/PNG) al Storage de Supabase
+  console.log(`[guardarAvaluo] paso 6: subiendo ${archivos.length} archivos al Storage`)
   const erroresDocumentos: string[] = []
 
-  for (const archivo of archivos) {
+  for (let i = 0; i < archivos.length; i++) {
+    const archivo = archivos[i]
+    console.log(`[guardarAvaluo] archivo ${i + 1}/${archivos.length}: ${archivo.docNombre} (${archivo.file.name})`)
     const extension = (archivo.file.name.split('.').pop() || '').toLowerCase()
     const contentType = MIME_PERMITIDOS[extension] ?? archivo.file.type ?? 'application/octet-stream'
 
     if (!MIME_PERMITIDOS[extension]) {
+      console.warn(`[guardarAvaluo] formato rechazado: ${extension}`)
       erroresDocumentos.push(`Formato no permitido en ${archivo.docNombre}: solo PDF, JPG o PNG`)
       continue
     }
@@ -109,15 +119,23 @@ export async function guardarAvaluo(
     const storagePath = `avaluos/${avaluo.id}/${archivo.docId}-${Date.now()}.${extension}`
 
     // Subir el archivo al bucket 'documentos'
-    const { error: uploadError } = await supabase.storage
-      .from('documentos')
-      .upload(storagePath, archivo.file, {
-        contentType,
-        upsert: false,
-      })
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from('documentos')
+        .upload(storagePath, archivo.file, {
+          contentType,
+          upsert: false,
+        })
 
-    if (uploadError) {
-      erroresDocumentos.push(`No se pudo subir ${archivo.docNombre}: ${uploadError.message}`)
+      if (uploadError) {
+        console.error(`[guardarAvaluo] upload falló:`, uploadError)
+        erroresDocumentos.push(`No se pudo subir ${archivo.docNombre}: ${uploadError.message}`)
+        continue
+      }
+    } catch (uploadCrash) {
+      console.error(`[guardarAvaluo] excepción durante upload:`, uploadCrash)
+      const msg = uploadCrash instanceof Error ? uploadCrash.message : 'Error desconocido'
+      erroresDocumentos.push(`Excepción al subir ${archivo.docNombre}: ${msg}`)
       continue
     }
 
@@ -137,9 +155,11 @@ export async function guardarAvaluo(
       })
 
     if (docInsertError) {
+      console.error(`[guardarAvaluo] insert documentos falló:`, docInsertError)
       erroresDocumentos.push(`Error al registrar ${archivo.docNombre}: ${docInsertError.message}`)
     }
   }
+  console.log(`[guardarAvaluo] paso 6 completo. errores=${erroresDocumentos.length}`)
 
   // 7. Si hubo errores en documentos, los reportamos pero el avalúo ya quedó guardado
   if (erroresDocumentos.length > 0) {

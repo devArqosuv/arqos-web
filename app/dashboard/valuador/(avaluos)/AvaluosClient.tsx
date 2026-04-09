@@ -476,9 +476,32 @@ export default function AvaluosClient() {
         ]
       : archivosBase;
 
-    const res = await guardarAvaluo(payload, archivos);
-    setGuardadoResult(res);
-    setGuardando(false);
+    try {
+      // Race con timeout: si la action no responde en 60s, fallamos en lugar
+      // de dejar el botón colgado para siempre.
+      const TIMEOUT_MS = 60_000;
+      const res = await Promise.race([
+        guardarAvaluo(payload, archivos),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error(`Timeout: la operación tardó más de ${TIMEOUT_MS / 1000} segundos. Verifica conexión y permisos de Storage.`)),
+            TIMEOUT_MS,
+          ),
+        ),
+      ]);
+      setGuardadoResult(res);
+    } catch (err) {
+      // Si la server action lanza una excepción no controlada, mostramos el error
+      // en pantalla en lugar de dejar el botón colgado en "GUARDANDO..." para siempre.
+      console.error('handleGuardar — error inesperado:', err);
+      const mensaje = err instanceof Error ? err.message : 'Error desconocido al guardar.';
+      setGuardadoResult({
+        exito: false,
+        error: `No se pudo guardar el avalúo: ${mensaje}`,
+      });
+    } finally {
+      setGuardando(false);
+    }
   };
 
   const limpiarTodo = () => {
