@@ -2,7 +2,6 @@ import { redirect, notFound } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/util/supabase/server';
 import { requireRole } from '@/util/supabase/dal';
-import ValuadorSidebar from '../../ValuadorSidebar';
 import ValuadorTopbar from '../../ValuadorTopbar';
 import AvaluoDetailClient from './AvaluoDetailClient';
 
@@ -60,8 +59,6 @@ export default async function AvaluoDetailPage({
   });
 
   return (
-    <div className="flex h-screen bg-[#F0F2F5] font-sans text-slate-900">
-      <ValuadorSidebar />
       <main className="flex-1 flex flex-col overflow-hidden">
         <ValuadorTopbar paginaActiva="Expedientes" />
         <div className="flex-1 overflow-y-auto">
@@ -107,6 +104,5 @@ export default async function AvaluoDetailPage({
           />
         </div>
       </main>
-    </div>
   );
 }
