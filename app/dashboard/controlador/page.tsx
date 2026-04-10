@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/util/supabase/client';
 import ControladorSidebar from './ControladorSidebar';
 import ControladorTopbar from './ControladorTopbar';
+import TablaResumenBanco, { type AvaluoParaTabla } from '@/app/components/TablaResumenBanco';
 
 type AccionTipo = 'aprobar' | 'rechazar' | 'correcciones' | null;
 
@@ -28,6 +29,38 @@ export default function ControladorDashboard() {
   const [nota, setNota] = useState('');
   const [procesando, setProcesando] = useState(false);
   const [mensaje, setMensaje] = useState<{ texto: string; tipo: 'exito' | 'error' } | null>(null);
+
+  // Tabla resumen por banco (solo avalúos asignados al controlador)
+  const [anioResumen, setAnioResumen] = useState(new Date().getFullYear());
+  const [avaluosResumen, setAvaluosResumen] = useState<AvaluoParaTabla[]>([]);
+  const [cargandoResumen, setCargandoResumen] = useState(true);
+
+  useEffect(() => {
+    let cancelado = false;
+    async function cargarResumen() {
+      setCargandoResumen(true);
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || cancelado) return;
+      const inicio = new Date(anioResumen, 0, 1).toISOString();
+      const fin = new Date(anioResumen + 1, 0, 1).toISOString();
+      const { data } = await supabase
+        .from('avaluos')
+        .select('id, estado, banco_id, banco:banco_id (nombre)')
+        .eq('controlador_id', user.id)
+        .gte('fecha_solicitud', inicio)
+        .lt('fecha_solicitud', fin);
+      if (cancelado) return;
+      const aplanados = ((data ?? []) as Array<Omit<AvaluoParaTabla, 'banco'> & { banco: { nombre: string }[] | { nombre: string } | null }>).map((a) => ({
+        ...a,
+        banco: Array.isArray(a.banco) ? a.banco[0] ?? null : a.banco,
+      }));
+      setAvaluosResumen(aplanados);
+      setCargandoResumen(false);
+    }
+    cargarResumen();
+    return () => { cancelado = true; };
+  }, [anioResumen]);
 
   const cargarPendientes = async () => {
     setCargando(true);
@@ -156,6 +189,16 @@ export default function ControladorDashboard() {
                 <button onClick={() => setMensaje(null)} className="text-xs font-bold opacity-60 hover:opacity-100">✕</button>
               </div>
             )}
+
+            {/* Resumen por banco */}
+            <TablaResumenBanco
+              avaluos={avaluosResumen}
+              cargando={cargandoResumen}
+              anio={anioResumen}
+              setAnio={setAnioResumen}
+              titulo="Mis Avalúos por Cliente / Banco"
+              linkBase="/dashboard/controlador/expedientes"
+            />
 
             {/* Tabla pendientes */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">

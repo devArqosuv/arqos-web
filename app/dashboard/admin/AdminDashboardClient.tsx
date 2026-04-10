@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/util/supabase/client';
+import TablaResumenBanco, { type AvaluoParaTabla } from '@/app/components/TablaResumenBanco';
 import {
   crearUsuarioAction,
   actualizarUsuarioAction,
@@ -34,7 +36,7 @@ interface ProyectoAprobado {
   controlador: { nombre: string; apellidos: string | null } | null;
 }
 
-type Tab = 'usuarios' | 'proyectos';
+type Tab = 'resumen' | 'usuarios' | 'proyectos';
 
 const ROL_LABEL: Record<string, string> = {
   administrador: 'Administrador',
@@ -69,8 +71,38 @@ export default function AdminDashboardClient({
   adminId: string;
 }) {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>('usuarios');
+  const [tab, setTab] = useState<Tab>('resumen');
   const [modalCrear, setModalCrear] = useState(false);
+
+  // Tabla resumen por banco (TODOS los avalúos del sistema)
+  const [anioResumen, setAnioResumen] = useState(new Date().getFullYear());
+  const [avaluosResumen, setAvaluosResumen] = useState<AvaluoParaTabla[]>([]);
+  const [cargandoResumen, setCargandoResumen] = useState(true);
+
+  useEffect(() => {
+    if (tab !== 'resumen') return;
+    let cancelado = false;
+    async function cargar() {
+      setCargandoResumen(true);
+      const supabase = createClient();
+      const inicio = new Date(anioResumen, 0, 1).toISOString();
+      const fin = new Date(anioResumen + 1, 0, 1).toISOString();
+      const { data } = await supabase
+        .from('avaluos')
+        .select('id, estado, banco_id, banco:banco_id (nombre)')
+        .gte('fecha_solicitud', inicio)
+        .lt('fecha_solicitud', fin);
+      if (cancelado) return;
+      const aplanados = ((data ?? []) as Array<Omit<AvaluoParaTabla, 'banco'> & { banco: { nombre: string }[] | { nombre: string } | null }>).map((a) => ({
+        ...a,
+        banco: Array.isArray(a.banco) ? a.banco[0] ?? null : a.banco,
+      }));
+      setAvaluosResumen(aplanados);
+      setCargandoResumen(false);
+    }
+    cargar();
+    return () => { cancelado = true; };
+  }, [tab, anioResumen]);
   const [editando, setEditando] = useState<Usuario | null>(null);
   const [confirmarEliminar, setConfirmarEliminar] = useState<Usuario | null>(null);
   const [toast, setToast] = useState<{ tipo: 'exito' | 'error'; texto: string } | null>(null);
@@ -121,33 +153,30 @@ export default function AdminDashboardClient({
           <div>
             <p className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-1">Panel Administrativo</p>
             <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-              {tab === 'usuarios' ? 'Gestión de Usuarios' : 'Proyectos Aprobados'}
+              {tab === 'resumen' ? 'Resumen General' : tab === 'usuarios' ? 'Gestión de Usuarios' : 'Proyectos Aprobados'}
             </h2>
           </div>
         </div>
 
         {/* Tabs */}
         <div className="flex gap-2 border-b border-slate-200">
-          <button
-            onClick={() => setTab('usuarios')}
-            className={`px-5 py-3 text-sm font-bold transition border-b-2 -mb-px ${
-              tab === 'usuarios'
-                ? 'border-slate-900 text-slate-900'
-                : 'border-transparent text-slate-400 hover:text-slate-600'
-            }`}
-          >
-            USUARIOS
-          </button>
-          <button
-            onClick={() => setTab('proyectos')}
-            className={`px-5 py-3 text-sm font-bold transition border-b-2 -mb-px ${
-              tab === 'proyectos'
-                ? 'border-slate-900 text-slate-900'
-                : 'border-transparent text-slate-400 hover:text-slate-600'
-            }`}
-          >
-            PROYECTOS APROBADOS
-          </button>
+          {([
+            { key: 'resumen' as Tab, label: 'RESUMEN' },
+            { key: 'usuarios' as Tab, label: 'USUARIOS' },
+            { key: 'proyectos' as Tab, label: 'PROYECTOS APROBADOS' },
+          ]).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-5 py-3 text-sm font-bold transition border-b-2 -mb-px ${
+                tab === t.key
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
         {/* Toast */}
@@ -161,6 +190,17 @@ export default function AdminDashboardClient({
           >
             {toast.texto}
           </div>
+        )}
+
+        {/* TAB: RESUMEN (tabla SAX con TODOS los avalúos del sistema) */}
+        {tab === 'resumen' && (
+          <TablaResumenBanco
+            avaluos={avaluosResumen}
+            cargando={cargandoResumen}
+            anio={anioResumen}
+            setAnio={setAnioResumen}
+            titulo="Reporte General — Todos los Avalúos"
+          />
         )}
 
         {/* TAB: USUARIOS */}
