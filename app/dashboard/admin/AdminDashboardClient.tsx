@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/util/supabase/client';
 import TablaResumenBanco, { type AvaluoParaTabla } from '@/app/components/TablaResumenBanco';
@@ -36,7 +37,36 @@ interface ProyectoAprobado {
   controlador: { nombre: string; apellidos: string | null } | null;
 }
 
-type Tab = 'resumen' | 'usuarios' | 'proyectos';
+type Tab = 'resumen' | 'expedientes' | 'usuarios' | 'proyectos';
+
+interface AvaluoExpediente {
+  id: string;
+  folio: string | null;
+  estado: string;
+  tipo_inmueble: string | null;
+  calle: string;
+  colonia: string | null;
+  municipio: string;
+  estado_inmueble: string;
+  valor_estimado: number | null;
+  fecha_solicitud: string;
+  valuador: { nombre: string; apellidos: string | null } | null;
+  controlador: { nombre: string; apellidos: string | null } | null;
+}
+
+const ESTADO_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
+  solicitud:        { label: 'Solicitud',        color: 'text-blue-600',    bg: 'bg-blue-50 border-blue-200' },
+  captura:          { label: 'Captura',          color: 'text-amber-600',   bg: 'bg-amber-50 border-amber-200' },
+  agenda_visita:    { label: 'Agenda Visita',    color: 'text-orange-600',  bg: 'bg-orange-50 border-orange-200' },
+  visita_realizada: { label: 'Visita Realizada', color: 'text-purple-600',  bg: 'bg-purple-50 border-purple-200' },
+  preavaluo:        { label: 'Preavalúo',        color: 'text-cyan-600',    bg: 'bg-cyan-50 border-cyan-200' },
+  revision:         { label: 'Revisión',         color: 'text-violet-600',  bg: 'bg-violet-50 border-violet-200' },
+  firma:            { label: 'Firma',            color: 'text-sky-600',     bg: 'bg-sky-50 border-sky-200' },
+  aprobado:         { label: 'Aprobado',         color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' },
+  rechazado:        { label: 'Rechazado',        color: 'text-red-600',     bg: 'bg-red-50 border-red-200' },
+};
+
+const ESTADOS_FILTRO = ['todos', 'captura', 'agenda_visita', 'visita_realizada', 'preavaluo', 'revision', 'firma', 'aprobado', 'rechazado'];
 
 const ROL_LABEL: Record<string, string> = {
   administrador: 'Administrador',
@@ -78,6 +108,52 @@ export default function AdminDashboardClient({
   const [anioResumen, setAnioResumen] = useState(new Date().getFullYear());
   const [avaluosResumen, setAvaluosResumen] = useState<AvaluoParaTabla[]>([]);
   const [cargandoResumen, setCargandoResumen] = useState(true);
+
+  // Expedientes: TODOS los avalúos del sistema
+  const [expedientes, setExpedientes] = useState<AvaluoExpediente[]>([]);
+  const [cargandoExp, setCargandoExp] = useState(true);
+  const [filtroEstado, setFiltroEstado] = useState('todos');
+  const [busquedaExp, setBusquedaExp] = useState('');
+
+  useEffect(() => {
+    if (tab !== 'expedientes') return;
+    let cancelado = false;
+    async function cargar() {
+      setCargandoExp(true);
+      const supabase = createClient();
+      let query = supabase
+        .from('avaluos')
+        .select('id, folio, estado, tipo_inmueble, calle, colonia, municipio, estado_inmueble, valor_estimado, fecha_solicitud, valuador:valuador_id (nombre, apellidos), controlador:controlador_id (nombre, apellidos)')
+        .order('fecha_solicitud', { ascending: false });
+
+      if (filtroEstado !== 'todos') {
+        query = query.eq('estado', filtroEstado);
+      }
+
+      const { data } = await query;
+      if (cancelado) return;
+      const aplanados = ((data ?? []) as Array<Omit<AvaluoExpediente, 'valuador' | 'controlador'> & { valuador: unknown; controlador: unknown }>).map((a) => ({
+        ...a,
+        valuador: Array.isArray(a.valuador) ? a.valuador[0] ?? null : a.valuador as AvaluoExpediente['valuador'],
+        controlador: Array.isArray(a.controlador) ? a.controlador[0] ?? null : a.controlador as AvaluoExpediente['controlador'],
+      }));
+      setExpedientes(aplanados);
+      setCargandoExp(false);
+    }
+    cargar();
+    return () => { cancelado = true; };
+  }, [tab, filtroEstado]);
+
+  const expedientesFiltrados = expedientes.filter((a) => {
+    if (!busquedaExp) return true;
+    const q = busquedaExp.toLowerCase();
+    return (
+      a.folio?.toLowerCase().includes(q) ||
+      a.calle?.toLowerCase().includes(q) ||
+      a.municipio?.toLowerCase().includes(q) ||
+      nombreCompleto(a.valuador).toLowerCase().includes(q)
+    );
+  });
 
   useEffect(() => {
     if (tab !== 'resumen') return;
@@ -153,7 +229,7 @@ export default function AdminDashboardClient({
           <div>
             <p className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-1">Panel Administrativo</p>
             <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-              {tab === 'resumen' ? 'Resumen General' : tab === 'usuarios' ? 'Gestión de Usuarios' : 'Proyectos Aprobados'}
+              {tab === 'resumen' ? 'Resumen General' : tab === 'expedientes' ? 'Todos los Expedientes' : tab === 'usuarios' ? 'Gestión de Usuarios' : 'Proyectos Aprobados'}
             </h2>
           </div>
         </div>
@@ -162,6 +238,7 @@ export default function AdminDashboardClient({
         <div className="flex gap-2 border-b border-slate-200">
           {([
             { key: 'resumen' as Tab, label: 'RESUMEN' },
+            { key: 'expedientes' as Tab, label: 'EXPEDIENTES' },
             { key: 'usuarios' as Tab, label: 'USUARIOS' },
             { key: 'proyectos' as Tab, label: 'PROYECTOS APROBADOS' },
           ]).map((t) => (
@@ -201,6 +278,127 @@ export default function AdminDashboardClient({
             setAnio={setAnioResumen}
             titulo="Reporte General — Todos los Avalúos"
           />
+        )}
+
+        {/* TAB: EXPEDIENTES (TODOS los avalúos del sistema) */}
+        {tab === 'expedientes' && (
+          <section className="space-y-4">
+            {/* Filtros + búsqueda */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center bg-white rounded-xl border border-slate-200 p-1 gap-0.5">
+                {ESTADOS_FILTRO.map((estado) => (
+                  <button
+                    key={estado}
+                    onClick={() => setFiltroEstado(estado)}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition ${
+                      filtroEstado === estado
+                        ? 'bg-[#0F172A] text-white'
+                        : 'text-slate-400 hover:text-slate-700'
+                    }`}
+                  >
+                    {estado === 'todos' ? 'Todos' : ESTADO_CONFIG[estado]?.label ?? estado}
+                  </button>
+                ))}
+              </div>
+              <div className="flex-1 relative min-w-[200px]">
+                <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  value={busquedaExp}
+                  onChange={(e) => setBusquedaExp(e.target.value)}
+                  placeholder="Buscar por folio, calle, municipio o valuador..."
+                  className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                />
+              </div>
+            </div>
+
+            {/* Tabla */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              {cargandoExp ? (
+                <div className="p-8 space-y-3">
+                  {[1,2,3,4].map(i => (
+                    <div key={i} className="h-14 bg-slate-50 rounded-xl animate-pulse" />
+                  ))}
+                </div>
+              ) : expedientesFiltrados.length === 0 ? (
+                <div className="py-20 text-center">
+                  <p className="text-slate-400 text-sm font-semibold">
+                    {busquedaExp ? 'No se encontraron resultados' : 'No hay expedientes en este estado'}
+                  </p>
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-100">
+                    <tr>
+                      {['Folio', 'Inmueble', 'Municipio', 'Valuador', 'Controlador', 'Valor Est.', 'Estado', 'Fecha', ''].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {expedientesFiltrados.map((a) => {
+                      const est = ESTADO_CONFIG[a.estado] || ESTADO_CONFIG.solicitud;
+                      return (
+                        <tr key={a.id} className="hover:bg-slate-50 transition group">
+                          <td className="px-4 py-4">
+                            <span className="text-xs font-black text-slate-900">{a.folio || '—'}</span>
+                          </td>
+                          <td className="px-4 py-4 max-w-[160px]">
+                            <p className="text-xs font-semibold text-slate-700 truncate">{a.calle}</p>
+                            {a.colonia && <p className="text-[10px] text-slate-400 truncate">{a.colonia}</p>}
+                          </td>
+                          <td className="px-4 py-4">
+                            <p className="text-xs text-slate-600 font-semibold">{a.municipio}</p>
+                            <p className="text-[10px] text-slate-400">{a.estado_inmueble}</p>
+                          </td>
+                          <td className="px-4 py-4 text-xs text-slate-600 font-semibold">
+                            {nombreCompleto(a.valuador)}
+                          </td>
+                          <td className="px-4 py-4 text-xs text-slate-600 font-semibold">
+                            {nombreCompleto(a.controlador)}
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className="text-xs font-bold text-slate-700">
+                              {a.valor_estimado
+                                ? `$${Number(a.valor_estimado).toLocaleString('es-MX')}`
+                                : '—'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${est.bg} ${est.color}`}>
+                              {est.label}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className="text-[10px] text-slate-400 font-semibold">
+                              {new Date(a.fecha_solicitud).toLocaleDateString('es-MX')}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4">
+                            <Link
+                              href={`/dashboard/admin/expedientes/${a.id}`}
+                              className="text-[10px] font-bold text-slate-400 hover:text-slate-900 opacity-0 group-hover:opacity-100 transition"
+                            >
+                              Ver →
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+              {!cargandoExp && expedientesFiltrados.length > 0 && (
+                <div className="px-5 py-3 border-t border-slate-100 bg-slate-50">
+                  <p className="text-[10px] font-semibold text-slate-400">
+                    {expedientesFiltrados.length} expediente(s)
+                  </p>
+                </div>
+              )}
+            </div>
+          </section>
         )}
 
         {/* TAB: USUARIOS */}
