@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { guardarAvaluo } from '@/util/supabase/actions';
+import { crearAvaluoVacioAction, registrarDocumentosAction } from '@/util/supabase/actions';
 import { createClient } from '@/util/supabase/client';
 import ValuadorTopbar from '../ValuadorTopbar';
 
@@ -471,11 +471,11 @@ export default function AvaluosClient() {
       uso_suelo_auto: usoSueloAuto,
     };
 
+    // Reunir todos los archivos a subir (docs del expediente + uso de suelo si aplica)
     const archivosBase = docsCustom
       .filter((d): d is DocCustom & { file: File } => !!d.file && !!d.nombre.trim())
-      .map((d) => ({ docId: d.id, docNombre: d.nombre.trim(), file: d.file }));
+      .map((d) => ({ docId: d.id, docNombre: d.nombre.trim(), file: d.file, categoria: undefined as 'uso_suelo' | undefined }));
 
-    // Si NO es Querétaro y subió imagen de uso de suelo, la agregamos con categoría especial
     const archivos = (!inmuebleEnQro && usoSueloFile)
       ? [
           ...archivosBase,
@@ -488,23 +488,93 @@ export default function AvaluosClient() {
         ]
       : archivosBase;
 
+    // ───────────────────────────────────────────────────────
+    // FLUJO DE GUARDADO (Direct Upload a Supabase Storage)
+    //
+    // 1. Server action: crear avalúo vacío → recibe { id, folio }
+    //    (request <50KB, sin archivos)
+    // 2. Browser: subir cada archivo DIRECTO a Supabase Storage
+    //    (no pasa por Vercel, sin cap de 4.5 MB)
+    // 3. Server action: registrar los documentos subidos en la tabla
+    //    (request <50KB, solo metadata)
+    // ───────────────────────────────────────────────────────
     try {
-      // Race con timeout: si la action no responde en 60s, fallamos en lugar
-      // de dejar el botón colgado para siempre.
-      const TIMEOUT_MS = 60_000;
-      const res = await Promise.race([
-        guardarAvaluo(payload, archivos),
-        new Promise<never>((_, reject) =>
-          setTimeout(
-            () => reject(new Error(`Timeout: la operación tardó más de ${TIMEOUT_MS / 1000} segundos. Verifica conexión y permisos de Storage.`)),
-            TIMEOUT_MS,
-          ),
-        ),
-      ]);
-      setGuardadoResult(res);
+      // PASO 1 — crear avalúo vacío
+      const resCrear = await crearAvaluoVacioAction(payload);
+      if (!resCrear.exito || !resCrear.avaluo_id) {
+        setGuardadoResult({ exito: false, error: resCrear.error || 'No se pudo crear el avalúo.' });
+        return;
+      }
+
+      const avaluoId = resCrear.avaluo_id;
+      const folio = resCrear.folio;
+
+      // PASO 2 — subir archivos directo al Storage en paralelo
+      const supabase = createClient();
+      const MIME_PERMITIDOS: Record<string, string> = {
+        pdf:  'application/pdf',
+        jpg:  'image/jpeg',
+        jpeg: 'image/jpeg',
+        png:  'image/png',
+      };
+
+      const subidosResult = await Promise.all(
+        archivos.map(async (archivo) => {
+          const ext = (archivo.file.name.split('.').pop() || '').toLowerCase();
+          const contentType = MIME_PERMITIDOS[ext] ?? archivo.file.type ?? 'application/octet-stream';
+          if (!MIME_PERMITIDOS[ext]) {
+            return { ok: false as const, error: `${archivo.docNombre}: formato no permitido (${ext})` };
+          }
+          const storagePath = `avaluos/${avaluoId}/${archivo.docId}-${Date.now()}.${ext}`;
+          const { error: errUpload } = await supabase.storage
+            .from('documentos')
+            .upload(storagePath, archivo.file, { contentType, upsert: false });
+          if (errUpload) {
+            return { ok: false as const, error: `${archivo.docNombre}: ${errUpload.message}` };
+          }
+          return {
+            ok: true as const,
+            doc: {
+              docId: archivo.docId,
+              docNombre: archivo.docNombre,
+              storagePath,
+              contentType,
+              tamanio: archivo.file.size,
+              categoria: archivo.categoria,
+            },
+          };
+        }),
+      );
+
+      const erroresUpload = subidosResult.filter((r) => !r.ok).map((r) => (r as { error: string }).error);
+      const subidosOk = subidosResult
+        .filter((r): r is { ok: true; doc: { docId: string; docNombre: string; storagePath: string; contentType: string; tamanio: number; categoria: 'uso_suelo' | undefined } } => r.ok)
+        .map((r) => r.doc);
+
+      // PASO 3 — registrar los subidos en la tabla documentos
+      if (subidosOk.length > 0) {
+        const resRegistro = await registrarDocumentosAction(avaluoId, subidosOk);
+        if (!resRegistro.exito) {
+          erroresUpload.push(`Registro de documentos falló: ${resRegistro.error}`);
+        }
+      }
+
+      // Reportar resultado al UI
+      if (erroresUpload.length > 0) {
+        setGuardadoResult({
+          exito: true,
+          avaluo_id: avaluoId,
+          folio,
+          error: `Avalúo guardado (${folio}), pero algunos archivos fallaron:\n${erroresUpload.join('\n')}`,
+        });
+      } else {
+        setGuardadoResult({
+          exito: true,
+          avaluo_id: avaluoId,
+          folio,
+        });
+      }
     } catch (err) {
-      // Si la server action lanza una excepción no controlada, mostramos el error
-      // en pantalla en lugar de dejar el botón colgado en "GUARDANDO..." para siempre.
       console.error('handleGuardar — error inesperado:', err);
       const mensaje = err instanceof Error ? err.message : 'Error desconocido al guardar.';
       setGuardadoResult({
@@ -1302,7 +1372,7 @@ export default function AvaluosClient() {
                 {/* Botón guardar */}
                 <button
                   onClick={handleGuardar}
-                  disabled={!validacionAprobada || guardando || guardadoResult?.exito === true || !usoSueloListo}
+                  disabled={Boolean(!validacionAprobada || guardando || guardadoResult?.exito === true || !usoSueloListo)}
                   className={`w-full disabled:bg-slate-200 disabled:text-slate-400 text-white font-black text-xs py-4 rounded-2xl transition flex items-center justify-center gap-2 tracking-widest shadow-lg ${
                     validacionManual
                       ? 'bg-red-600 hover:bg-red-700 shadow-red-300/50 border-2 border-red-700'

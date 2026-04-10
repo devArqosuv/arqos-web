@@ -27,6 +27,7 @@ export default async function AvaluoDetailPage({
       firmado_uv, firmado_valuador, fecha_firma_uv, fecha_firma_valuador,
       pdf_oficial_path,
       verificacion_servicios,
+      motivo_devolucion, devuelto_at, devoluciones_count,
       valuador_id, solicitante_id,
       valuador:valuador_id (nombre, apellidos)
     `)
@@ -97,6 +98,9 @@ export default async function AvaluoDetailPage({
               pdf_oficial_path: avaluoRaw.pdf_oficial_path,
               valuador,
               verificacion_servicios: (avaluoRaw as { verificacion_servicios: unknown }).verificacion_servicios as import('./AvaluoDetailClient').VerificacionServicios | null,
+              motivo_devolucion: (avaluoRaw as { motivo_devolucion: string | null }).motivo_devolucion ?? null,
+              devuelto_at: (avaluoRaw as { devuelto_at: string | null }).devuelto_at ?? null,
+              devoluciones_count: (avaluoRaw as { devoluciones_count: number | null }).devoluciones_count ?? 0,
             }}
             contadoresFotos={contadores}
           />

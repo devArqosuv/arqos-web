@@ -92,6 +92,9 @@ interface Props {
     pdf_oficial_path: string | null;
     valuador: { nombre: string; apellidos: string | null } | null;
     verificacion_servicios: VerificacionServicios | null;
+    motivo_devolucion: string | null;
+    devuelto_at: string | null;
+    devoluciones_count: number;
   };
   contadoresFotos: {
     fachada: number;
@@ -560,6 +563,33 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
 
       {avaluo.estado === 'preavaluo' && (
         <section className="bg-white rounded-2xl border-2 border-cyan-300 shadow-md p-6 space-y-5">
+          {/* Banner de devolución: solo si el controlador devolvió este expediente */}
+          {avaluo.motivo_devolucion && avaluo.devoluciones_count > 0 && (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4">
+              <div className="flex items-start gap-3">
+                <div className="bg-amber-500 text-white rounded-full w-8 h-8 flex items-center justify-center shrink-0 shadow">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-black text-amber-800 uppercase tracking-widest">
+                    Re-ajuste solicitado por el controlador
+                    {avaluo.devoluciones_count > 1 && ` (${avaluo.devoluciones_count}ª vez)`}
+                  </p>
+                  <p className="text-xs text-amber-900 mt-1.5 leading-snug whitespace-pre-wrap font-semibold">
+                    {avaluo.motivo_devolucion}
+                  </p>
+                  {avaluo.devuelto_at && (
+                    <p className="text-[9px] text-amber-700 mt-2 font-semibold">
+                      Devuelto el {new Date(avaluo.devuelto_at).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           <div>
             <p className="text-[10px] font-bold text-cyan-600 uppercase tracking-widest mb-1">
               SIGUIENTE PASO

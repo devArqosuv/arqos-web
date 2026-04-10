@@ -27,6 +27,7 @@ export default async function ControladorAvaluoPage({
       fecha_solicitud, fecha_visita_agendada, fecha_visita_realizada,
       firmado_uv, firmado_valuador, fecha_firma_uv, fecha_firma_valuador,
       pdf_oficial_path,
+      motivo_devolucion, devuelto_at, devoluciones_count,
       controlador_id
     `)
     .eq('id', id)
@@ -111,6 +112,9 @@ export default async function ControladorAvaluoPage({
               fecha_firma_uv: avaluo.fecha_firma_uv,
               fecha_firma_valuador: avaluo.fecha_firma_valuador,
               pdf_oficial_path: avaluo.pdf_oficial_path,
+              motivo_devolucion: (avaluo as { motivo_devolucion: string | null }).motivo_devolucion ?? null,
+              devuelto_at: (avaluo as { devuelto_at: string | null }).devuelto_at ?? null,
+              devoluciones_count: (avaluo as { devoluciones_count: number | null }).devoluciones_count ?? 0,
             }}
             comparables={comparablesRaw ?? []}
             contadoresFotos={contadores}

@@ -246,6 +246,47 @@ export async function generarPreavaluoAction(avaluoId: string): Promise<Resultad
 }
 
 // ────────────────────────────────────────────────────────────
+// DEVOLVER A PREAVALUO (controlador rechaza el ajuste y pide re-ajuste)
+//   revision → preavaluo
+// ────────────────────────────────────────────────────────────
+export async function devolverAPrevaluoAction(
+  avaluoId: string,
+  motivo: string,
+): Promise<Resultado> {
+  try {
+    const userId = await asegurarControlador(avaluoId);
+
+    if (!motivo || motivo.trim().length < 10) {
+      return { exito: false, mensaje: 'El motivo debe tener al menos 10 caracteres.' };
+    }
+
+    const supabase = await createClient();
+
+    // RPC atómica que valida estado, controlador asignado, guarda motivo
+    // y cambia el estado en una sola operación.
+    const { data: rpcData, error: rpcError } = await supabase.rpc('fn_devolver_a_preavaluo', {
+      p_avaluo_id:  avaluoId,
+      p_usuario_id: userId,
+      p_motivo:     motivo.trim(),
+    });
+
+    if (rpcError || !rpcData?.exito) {
+      return {
+        exito: false,
+        mensaje: rpcData?.mensaje || rpcError?.message || 'No se pudo devolver el avalúo.',
+      };
+    }
+
+    revalidatePath(`/dashboard/controlador/expedientes/${avaluoId}`);
+    revalidatePath(`/dashboard/valuador/expedientes/${avaluoId}`);
+    return { exito: true, mensaje: 'Avalúo devuelto al valuador para re-ajuste.' };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Error desconocido';
+    return { exito: false, mensaje: msg };
+  }
+}
+
+// ────────────────────────────────────────────────────────────
 // PASAR A FIRMA (controlador acepta el valor del valuador)
 //   revision → firma
 // ────────────────────────────────────────────────────────────

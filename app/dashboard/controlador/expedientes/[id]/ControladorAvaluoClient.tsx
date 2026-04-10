@@ -7,6 +7,7 @@ import {
   eliminarComparableAction,
   generarPreavaluoAction,
   pasarAFirmaAction,
+  devolverAPrevaluoAction,
 } from '../actions';
 import { firmarUVAction, obtenerUrlPdfOficialAction } from '../../../firma/actions';
 
@@ -35,6 +36,9 @@ interface Avaluo {
   fecha_firma_uv: string | null;
   fecha_firma_valuador: string | null;
   pdf_oficial_path: string | null;
+  motivo_devolucion: string | null;
+  devuelto_at: string | null;
+  devoluciones_count: number;
 }
 
 interface Comparable {
@@ -88,6 +92,8 @@ export default function ControladorAvaluoClient({ avaluo, comparables, contadore
   const [toast, setToast] = useState<{ tipo: 'exito' | 'error'; texto: string } | null>(null);
   const [modalAbierto, setModalAbierto] = useState(false);
   const [confirmarEliminar, setConfirmarEliminar] = useState<Comparable | null>(null);
+  const [modalDevolverAbierto, setModalDevolverAbierto] = useState(false);
+  const [motivoDevolucion, setMotivoDevolucion] = useState('');
 
   const mostrarToast = (tipo: 'exito' | 'error', texto: string) => {
     setToast({ tipo, texto });
@@ -149,6 +155,22 @@ export default function ControladorAvaluoClient({ avaluo, comparables, contadore
       const res = await pasarAFirmaAction(avaluo.id);
       mostrarToast(res.exito ? 'exito' : 'error', res.mensaje);
       if (res.exito) router.refresh();
+    });
+  };
+
+  const handleDevolver = () => {
+    if (motivoDevolucion.trim().length < 10) {
+      mostrarToast('error', 'El motivo debe tener al menos 10 caracteres.');
+      return;
+    }
+    startTransition(async () => {
+      const res = await devolverAPrevaluoAction(avaluo.id, motivoDevolucion.trim());
+      mostrarToast(res.exito ? 'exito' : 'error', res.mensaje);
+      if (res.exito) {
+        setModalDevolverAbierto(false);
+        setMotivoDevolucion('');
+        router.refresh();
+      }
     });
   };
 
@@ -249,16 +271,33 @@ export default function ControladorAvaluoClient({ avaluo, comparables, contadore
             </div>
           </div>
 
-          {/* Botón de pasar a firma cuando está en revisión */}
+          {/* Decisión del controlador en estado revisión: aceptar o devolver */}
           {puedePasarAFirma && (
-            <button
-              type="button"
-              onClick={handlePasarAFirma}
-              disabled={pending}
-              className="mt-5 w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-700 text-white text-xs font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 tracking-wider"
-            >
-              {pending ? 'PROCESANDO…' : '✓ ACEPTAR VALOR Y PASAR A FIRMA'}
-            </button>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setModalDevolverAbierto(true)}
+                disabled={pending}
+                className="bg-amber-500 hover:bg-amber-600 disabled:bg-amber-700 text-white text-xs font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 tracking-wider"
+              >
+                ↩ DEVOLVER AL VALUADOR
+              </button>
+              <button
+                type="button"
+                onClick={handlePasarAFirma}
+                disabled={pending}
+                className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-700 text-white text-xs font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 tracking-wider"
+              >
+                {pending ? 'PROCESANDO…' : '✓ ACEPTAR Y PASAR A FIRMA'}
+              </button>
+            </div>
+          )}
+
+          {/* Si hubo devoluciones previas, mostrar el contador como contexto */}
+          {avaluo.devoluciones_count > 0 && (
+            <p className="mt-3 text-[10px] text-amber-300/80 font-semibold">
+              ⚠ Este expediente ha sido devuelto {avaluo.devoluciones_count} vez(es) al valuador.
+            </p>
           )}
         </section>
       )}
@@ -543,6 +582,49 @@ export default function ControladorAvaluoClient({ avaluo, comparables, contadore
               </button>
             </div>
           </form>
+        </Modal>
+      )}
+
+      {/* MODAL: DEVOLVER AL VALUADOR */}
+      {modalDevolverAbierto && (
+        <Modal
+          titulo="Solicitar re-ajuste al valuador"
+          onClose={() => { setModalDevolverAbierto(false); setMotivoDevolucion(''); }}
+        >
+          <p className="text-sm text-slate-600 mb-3">
+            El expediente regresará al valuador en estado <span className="font-bold text-cyan-700">Preavalúo</span> para
+            que ajuste valor, comparables o información del expediente.
+          </p>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+            Motivo de la devolución
+          </label>
+          <textarea
+            value={motivoDevolucion}
+            onChange={(e) => setMotivoDevolucion(e.target.value)}
+            placeholder="Describe qué debe corregir el valuador. Ej: 'El valor está 18% por debajo del promedio del mercado, revisa los comparables del fraccionamiento Las Palmas.'"
+            rows={4}
+            className="w-full text-xs text-slate-800 bg-slate-50 border-2 border-slate-200 rounded-lg px-3 py-2.5 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400 resize-none mb-3"
+          />
+          <p className={`text-[10px] font-bold mb-4 ${motivoDevolucion.trim().length >= 10 ? 'text-emerald-600' : 'text-slate-400'}`}>
+            {motivoDevolucion.trim().length}/10 caracteres mínimos
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => { setModalDevolverAbierto(false); setMotivoDevolucion(''); }}
+              className="flex-1 py-3 border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-50 transition"
+            >
+              CANCELAR
+            </button>
+            <button
+              type="button"
+              onClick={handleDevolver}
+              disabled={pending || motivoDevolucion.trim().length < 10}
+              className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-200 disabled:text-amber-400 text-white rounded-xl text-xs font-bold transition"
+            >
+              {pending ? 'DEVOLVIENDO…' : '↩ DEVOLVER AL VALUADOR'}
+            </button>
+          </div>
         </Modal>
       )}
 

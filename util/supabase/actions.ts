@@ -3,41 +3,48 @@
 import { createClient } from '@/util/supabase/server'
 import { CrearAvaluoPayload, GuardarAvaluoResult, TipoInmueble, CategoriaDocumento } from '@/types/arqos'
 
-// MIME types permitidos al subir documentos del expediente
-const MIME_PERMITIDOS: Record<string, string> = {
-  pdf:  'application/pdf',
-  jpg:  'image/jpeg',
-  jpeg: 'image/jpeg',
-  png:  'image/png',
-}
+// ============================================================
+// ARQUITECTURA DE UPLOADS:
+//
+// Antes: el cliente mandaba los Files a esta server action y Vercel
+// los pasaba por su límite de body de 4.5 MB → request rejected.
+//
+// Ahora (Direct Upload):
+//   1. Cliente llama crearAvaluoVacioAction() → recibe { id, folio }
+//   2. Cliente sube los archivos DIRECTO a Supabase Storage usando el
+//      browser client (sin pasar por Vercel — bypassea cualquier cap)
+//   3. Cliente llama registrarDocumentosAction() con la lista de paths
+//      ya subidos para que se registren en la tabla `documentos`
+//
+// Ventajas: cada request a Vercel pesa <50KB, sin importar cuántos
+// PDFs ni cuán pesados.
+// ============================================================
 
-interface ArchivoExpediente {
+interface DocumentoSubido {
   docId: string
   docNombre: string
-  file: File
+  storagePath: string
+  contentType: string
+  tamanio: number
   categoria?: CategoriaDocumento
 }
 
 // ============================================================
-// ACTION: Guardar avalúo completo con sus documentos
+// ACTION 1: Crear el avalúo vacío (sin documentos todavía)
+// Devuelve el id y folio para que el cliente sepa dónde subir los archivos.
 // ============================================================
-export async function guardarAvaluo(
+export async function crearAvaluoVacioAction(
   payload: CrearAvaluoPayload,
-  archivos: ArchivoExpediente[]
 ): Promise<GuardarAvaluoResult> {
-  console.log(`[guardarAvaluo] inicio — ${archivos.length} archivos`)
+  console.log('[crearAvaluoVacio] inicio')
   const supabase = await createClient()
 
-  // 1. Verificar sesión activa
-  console.log('[guardarAvaluo] paso 1: getUser')
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) {
-    console.error('[guardarAvaluo] sin sesión:', authError)
     return { exito: false, error: 'No autenticado. Inicia sesión para continuar.' }
   }
-  console.log('[guardarAvaluo] usuario:', user.id)
 
-  // 2. Construir las notas consolidadas (tipo de avalúo + datos extra de la IA)
+  // Notas consolidadas
   const notasConsolidadas = [
     `Tipo de avalúo: ${payload.tipo_avaluo === '1.0' ? '1.0 — Primera Enajenación' : '2.0 — Crédito'}`,
     payload.propietario_nombre ? `Propietario: ${payload.propietario_nombre}` : null,
@@ -47,12 +54,10 @@ export async function guardarAvaluo(
     .filter(Boolean)
     .join('\n')
 
-  // 3. Parsear valor estimado a número
   const valorNumerico = payload.valor_estimado
     ? Number(String(payload.valor_estimado).replace(/[^0-9.]/g, ''))
     : null
 
-  // 4. Determinar tipo_inmueble — si la IA no lo detectó, usar 'otro'
   const tipoInmuebleValido: TipoInmueble = (
     [
       'casa', 'departamento', 'local_comercial', 'oficina',
@@ -62,8 +67,6 @@ export async function guardarAvaluo(
     ? payload.tipo_inmueble
     : 'otro'
 
-  // 5. Insertar el avalúo en la tabla principal
-  console.log('[guardarAvaluo] paso 5: insertando en tabla avaluos')
   const { data: avaluo, error: insertError } = await supabase
     .from('avaluos')
     .insert({
@@ -82,11 +85,9 @@ export async function guardarAvaluo(
       banco_id:                payload.banco_id || null,
       uso_suelo:               payload.uso_suelo || null,
       uso_suelo_auto:          payload.uso_suelo_auto ?? false,
-      // Código del tipo — lo lee el trigger fn_asignar_folio_avaluo
-      // para generar PE-YYYY-NNNN (1.0) o CR-YYYY-NNNN (2.0)
       tipo_avaluo_codigo:      payload.tipo_avaluo,
-      estado:                  'captura',           // Empieza en captura al guardarse
-      valuador_id:             user.id,             // El evaluador actual es el valuador
+      estado:                  'captura',
+      valuador_id:             user.id,
       solicitante_id:          user.id,
       created_by:              user.id,
       notas:                   notasConsolidadas || null,
@@ -95,93 +96,88 @@ export async function guardarAvaluo(
     .single()
 
   if (insertError || !avaluo) {
-    console.error('[guardarAvaluo] Error al insertar avalúo:', insertError)
+    console.error('[crearAvaluoVacio] Error al insertar avalúo:', insertError)
     return {
       exito: false,
       error: `Error al guardar el avalúo: ${insertError?.message || 'Error desconocido'}`,
     }
   }
-  console.log('[guardarAvaluo] avalúo creado:', avaluo.id, avaluo.folio)
-
-  // 6. Subir los archivos en PARALELO (Promise.all) para fitear en el timeout
-  // de 10s del plan Hobby de Vercel. Subir 5 PDFs en serie facilmente rebasa
-  // 10s; en paralelo se hace en el tiempo del upload mas lento (~2-3s).
-  console.log(`[guardarAvaluo] paso 6: subiendo ${archivos.length} archivos al Storage en paralelo`)
-
-  const resultadosUpload = await Promise.all(
-    archivos.map(async (archivo, i) => {
-      const tag = `[guardarAvaluo] archivo ${i + 1}/${archivos.length}`
-      const extension = (archivo.file.name.split('.').pop() || '').toLowerCase()
-      const contentType = MIME_PERMITIDOS[extension] ?? archivo.file.type ?? 'application/octet-stream'
-
-      if (!MIME_PERMITIDOS[extension]) {
-        console.warn(`${tag} formato rechazado: ${extension}`)
-        return { ok: false, error: `Formato no permitido en ${archivo.docNombre}: solo PDF, JPG o PNG` }
-      }
-
-      const storagePath = `avaluos/${avaluo.id}/${archivo.docId}-${Date.now()}.${extension}`
-
-      // Upload al Storage
-      try {
-        const { error: uploadError } = await supabase.storage
-          .from('documentos')
-          .upload(storagePath, archivo.file, { contentType, upsert: false })
-
-        if (uploadError) {
-          console.error(`${tag} upload falló:`, uploadError)
-          return { ok: false, error: `No se pudo subir ${archivo.docNombre}: ${uploadError.message}` }
-        }
-      } catch (uploadCrash) {
-        console.error(`${tag} excepción durante upload:`, uploadCrash)
-        const msg = uploadCrash instanceof Error ? uploadCrash.message : 'Error desconocido'
-        return { ok: false, error: `Excepción al subir ${archivo.docNombre}: ${msg}` }
-      }
-
-      // Registrar el documento en la tabla documentos
-      const { error: docInsertError } = await supabase
-        .from('documentos')
-        .insert({
-          avaluo_id:     avaluo.id,
-          nombre:        archivo.docNombre,
-          descripcion:   `Documento ${archivo.docId} del expediente`,
-          bucket:        'documentos',
-          storage_path:  storagePath,
-          tipo_mime:     contentType,
-          tamanio_bytes: archivo.file.size,
-          categoria:     archivo.categoria ?? 'documento',
-          created_by:    user.id,
-        })
-
-      if (docInsertError) {
-        console.error(`${tag} insert documentos falló:`, docInsertError)
-        return { ok: false, error: `Error al registrar ${archivo.docNombre}: ${docInsertError.message}` }
-      }
-
-      console.log(`${tag} OK: ${archivo.docNombre}`)
-      return { ok: true as const }
-    })
-  )
-
-  const erroresDocumentos = resultadosUpload
-    .filter((r): r is { ok: false; error: string } => !r.ok)
-    .map((r) => r.error)
-  console.log(`[guardarAvaluo] paso 6 completo. errores=${erroresDocumentos.length}`)
-
-  // 7. Si hubo errores en documentos, los reportamos pero el avalúo ya quedó guardado
-  if (erroresDocumentos.length > 0) {
-    return {
-      exito: true,
-      avaluo_id: avaluo.id,
-      folio: avaluo.folio,
-      error: `Avalúo guardado (${avaluo.folio}), pero algunos documentos fallaron:\n${erroresDocumentos.join('\n')}`,
-    }
-  }
+  console.log('[crearAvaluoVacio] avalúo creado:', avaluo.id, avaluo.folio)
 
   return {
     exito: true,
     avaluo_id: avaluo.id,
     folio: avaluo.folio,
   }
+}
+
+// ============================================================
+// ACTION 2: Registrar los documentos ya subidos al Storage
+// El cliente subió los archivos directo a Supabase Storage; aquí solo
+// insertamos las filas en la tabla `documentos` (operación liviana).
+// ============================================================
+export async function registrarDocumentosAction(
+  avaluoId: string,
+  documentos: DocumentoSubido[],
+): Promise<{ exito: boolean; error?: string; insertados: number }> {
+  console.log(`[registrarDocumentos] inicio — ${documentos.length} docs para avalúo ${avaluoId}`)
+  const supabase = await createClient()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    return { exito: false, error: 'No autenticado.', insertados: 0 }
+  }
+
+  // Validar que el usuario es dueño del avalúo
+  const { data: avaluoCheck } = await supabase
+    .from('avaluos')
+    .select('id, valuador_id, solicitante_id')
+    .eq('id', avaluoId)
+    .single()
+
+  if (!avaluoCheck || (avaluoCheck.valuador_id !== user.id && avaluoCheck.solicitante_id !== user.id)) {
+    return { exito: false, error: 'No tienes permiso sobre este avalúo.', insertados: 0 }
+  }
+
+  // Insert masivo
+  const filas = documentos.map((d) => ({
+    avaluo_id:     avaluoId,
+    nombre:        d.docNombre,
+    descripcion:   `Documento ${d.docId} del expediente`,
+    bucket:        'documentos',
+    storage_path:  d.storagePath,
+    tipo_mime:     d.contentType,
+    tamanio_bytes: d.tamanio,
+    categoria:     d.categoria ?? 'documento',
+    created_by:    user.id,
+  }))
+
+  const { error: insertError, count } = await supabase
+    .from('documentos')
+    .insert(filas, { count: 'exact' })
+
+  if (insertError) {
+    console.error('[registrarDocumentos] error en insert:', insertError)
+    return { exito: false, error: insertError.message, insertados: 0 }
+  }
+
+  console.log(`[registrarDocumentos] OK — ${count ?? filas.length} filas insertadas`)
+  return { exito: true, insertados: count ?? filas.length }
+}
+
+// ============================================================
+// ACTION (legacy): guardarAvaluo — DEPRECATED
+// Mantenida sólo por compatibilidad. NO usar para nuevos flujos
+// porque hace pasar los archivos por el body de Vercel y choca con
+// el límite de 4.5 MB. Usa crearAvaluoVacioAction + uploads directos
+// + registrarDocumentosAction en su lugar.
+// ============================================================
+export async function guardarAvaluo(
+  payload: CrearAvaluoPayload,
+  _archivos: unknown[],
+): Promise<GuardarAvaluoResult> {
+  console.warn('[guardarAvaluo] DEPRECATED — usa crearAvaluoVacioAction + uploads directos')
+  return crearAvaluoVacioAction(payload)
 }
 
 // ============================================================
