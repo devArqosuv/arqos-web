@@ -162,6 +162,20 @@ GUÍA DE TIPOS COMUNES EN AVALÚOS MEXICANOS:
     - Suele ser de varias páginas
     - NO confundir con: solicitud de crédito, aviso de instrucción, oficio, mapa, foto
 
+    VALIDACIÓN GRANULAR OBLIGATORIA del Título — verifica si el documento contiene:
+      a) Comprobante de inscripción en el Registro Público de la Propiedad (RPP)
+      b) Sellos del Registro Público de la Propiedad
+      c) Sellos de notaría
+      d) Firma del notario
+      e) Croquis del inmueble (plano o descripción de colindancias y medidas)
+      f) Cuadro de construcción (superficies de terreno y/o construcción)
+    Si FALTA alguno de (a)-(f), NO marques el documento como inválido pero SÍ reporta
+    en el campo "errores" del documento cuáles faltan, por ejemplo:
+      "El Título no presenta sellos visibles del RPP ni croquis del inmueble."
+    Esto es ADVERTENCIA, no bloqueante — el valuador decide si procede o corrige.
+    Sin embargo, si falta la FIRMA del notario (d) → sí es ERROR BLOQUEANTE porque
+    un título sin firma no tiene validez legal.
+
   ▸ BOLETA PREDIAL / CÉDULA CATASTRAL / RECIBO DE PAGO PREDIAL:
     Tres variantes igualmente VÁLIDAS para este slot. Acepta CUALQUIERA:
 
@@ -188,6 +202,22 @@ GUÍA DE TIPOS COMUNES EN AVALÚOS MEXICANOS:
       - DEBE contener CLAVE CATASTRAL (formato típico 14 dígitos: 14-001-001-178-7017)
       - DEBE mencionar al propietario o contribuyente
       - DEBE referirse al impuesto predial / catastro
+
+    VALIDACIÓN DE ANTIGÜEDAD OBLIGATORIA:
+      - Hoy es ${new Date().toISOString().slice(0, 10)}.
+      - Extrae el periodo o fecha del documento (ej: "Ejercicio 2025", "Enero-Junio 2026", "Pagado 03/2025").
+      - Si el documento tiene MÁS DE 1 AÑO de antigüedad respecto a la fecha actual → ADVERTENCIA:
+        "La Boleta Predial corresponde al periodo [X], con más de 1 año de antigüedad. Se recomienda presentar un recibo del ejercicio fiscal actual o inmediato anterior."
+      - Si NO se puede determinar la fecha/periodo → ADVERTENCIA pidiendo verificación manual.
+      - Un documento del año fiscal actual o del inmediato anterior es VÁLIDO.
+
+    VALIDACIÓN GRANULAR — verifica que el documento contenga:
+      a) Clave catastral / Cuenta predial
+      b) Superficie de terreno
+      c) Valor terreno catastral
+      d) Ubicación del terreno
+      e) Datos del propietario (nombre completo)
+    Si falta alguno, reporta en "errores" cuáles faltan (ADVERTENCIA, no bloqueante).
 
     NO confundir con: mapa de macrolocalización, plano arquitectónico, recibo de agua (CEA/JAPAC), recibo de luz (CFE), foto del terreno, escritura notarial.
 

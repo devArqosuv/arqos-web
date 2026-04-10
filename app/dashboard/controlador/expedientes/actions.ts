@@ -313,3 +313,64 @@ export async function pasarAFirmaAction(avaluoId: string): Promise<Resultado> {
     return { exito: false, mensaje: msg };
   }
 }
+
+// ────────────────────────────────────────────────────────────
+// SOLICITAR DOCUMENTOS FALTANTES (controlador pide al valuador)
+//   visita_realizada → captura (regresa para que corrija docs)
+// ────────────────────────────────────────────────────────────
+export async function solicitarDocsFaltantesAction(
+  avaluoId: string,
+  motivo: string,
+): Promise<Resultado> {
+  try {
+    const userId = await asegurarControlador(avaluoId);
+
+    if (!motivo || motivo.trim().length < 10) {
+      return { exito: false, mensaje: 'El motivo debe tener al menos 10 caracteres.' };
+    }
+
+    const supabase = await createClient();
+
+    // Verificar estado — solo se puede solicitar docs en estos estados
+    const { data: avaluo } = await supabase
+      .from('avaluos')
+      .select('estado')
+      .eq('id', avaluoId)
+      .single();
+
+    if (!avaluo) return { exito: false, mensaje: 'Avalúo no encontrado.' };
+
+    const estadosPermitidos = ['visita_realizada', 'preavaluo', 'revision'];
+    if (!estadosPermitidos.includes(avaluo.estado)) {
+      return { exito: false, mensaje: `No se puede solicitar documentos en estado "${avaluo.estado}".` };
+    }
+
+    // Guardar el motivo y regresar a captura
+    await supabase
+      .from('avaluos')
+      .update({
+        motivo_devolucion: `[DOCUMENTOS FALTANTES]\n${motivo.trim()}`,
+        devuelto_at: new Date().toISOString(),
+        devoluciones_count: (await supabase.from('avaluos').select('devoluciones_count').eq('id', avaluoId).single()).data?.devoluciones_count + 1 || 1,
+      })
+      .eq('id', avaluoId);
+
+    const { data: rpcData, error: rpcError } = await supabase.rpc('fn_cambiar_estado_avaluo', {
+      p_avaluo_id: avaluoId,
+      p_nuevo_estado: 'captura',
+      p_usuario_id: userId,
+      p_comentario: `Controlador solicitó documentos faltantes: ${motivo.trim().slice(0, 200)}`,
+    });
+
+    if (rpcError || !rpcData?.exito) {
+      return { exito: false, mensaje: rpcData?.mensaje || rpcError?.message || 'No se pudo cambiar el estado.' };
+    }
+
+    revalidatePath(`/dashboard/controlador/expedientes/${avaluoId}`);
+    revalidatePath(`/dashboard/valuador/expedientes/${avaluoId}`);
+    return { exito: true, mensaje: 'Documentos faltantes solicitados al valuador. El expediente regresó a captura.' };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Error desconocido';
+    return { exito: false, mensaje: msg };
+  }
+}

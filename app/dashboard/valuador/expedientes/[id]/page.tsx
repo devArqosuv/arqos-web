@@ -51,9 +51,10 @@ export default async function AvaluoDetailPage({
     .select('categoria')
     .eq('avaluo_id', id);
 
-  const contadores = { fachada: 0, entorno: 0, interior: 0 };
+  const contadores = { fachada: 0, portada: 0, entorno: 0, interior: 0 };
   (docsCategoria ?? []).forEach((d: { categoria: string | null }) => {
     if (d.categoria === 'fachada') contadores.fachada++;
+    else if (d.categoria === 'portada') contadores.portada++;
     else if (d.categoria === 'entorno') contadores.entorno++;
     else if (d.categoria === 'interior') contadores.interior++;
   });

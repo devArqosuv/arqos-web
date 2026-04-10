@@ -98,6 +98,7 @@ interface Props {
   };
   contadoresFotos: {
     fachada: number;
+    portada: number;
     entorno: number;
     interior: number;
   };
@@ -122,16 +123,17 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
   const [fechaVisita, setFechaVisita] = useState('');
 
   // Estado de las fotos (solo se usa en estado agenda_visita)
-  // Requerimiento: 1 fachada + 2 entorno + 5 a 8 interior (rango).
-  // Arrancamos con 5 slots de interior; el valuador puede agregar hasta 8.
+  // Requerimiento: 1 fachada + 1 portada + 2 entorno + 5 a 8 interior (rango).
   const MIN_INTERIOR = 5;
   const MAX_INTERIOR = 8;
   const [fachada, setFachada] = useState<File | null>(null);
+  const [portada, setPortada] = useState<File | null>(null);
   const [entornos, setEntornos] = useState<(File | null)[]>([null, null]);
   const [interiores, setInteriores] = useState<(File | null)[]>(
     Array(MIN_INTERIOR).fill(null),
   );
   const fachadaRef = useRef<HTMLInputElement>(null);
+  const portadaRef = useRef<HTMLInputElement>(null);
   const entornoRefs = useRef<(HTMLInputElement | null)[]>([]);
   const interiorRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -173,11 +175,11 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
   };
 
   const interioresLlenos = interiores.filter(Boolean).length;
-  const totalFotos = (fachada ? 1 : 0) + entornos.filter(Boolean).length + interioresLlenos;
-  // Válido si: 1 fachada + 2 entornos + entre 5 y 8 interiores,
-  // y que todos los slots visibles estén llenos (no slots vacíos en medio).
+  const totalFotos = (fachada ? 1 : 0) + (portada ? 1 : 0) + entornos.filter(Boolean).length + interioresLlenos;
+  // Válido si: 1 fachada + 1 portada + 2 entornos + entre 5 y 8 interiores.
   const fotosCompletas =
     !!fachada &&
+    !!portada &&
     entornos.every(Boolean) &&
     interioresLlenos >= MIN_INTERIOR &&
     interioresLlenos <= MAX_INTERIOR &&
@@ -200,7 +202,7 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
 
   const handleSubirFotos = () => {
     if (!fotosCompletas) {
-      mostrarToast('error', `Faltan fotos: 1 fachada, 2 entorno y entre ${MIN_INTERIOR} y ${MAX_INTERIOR} interior (llena todos los slots visibles).`);
+      mostrarToast('error', `Faltan fotos: 1 fachada, 1 portada, 2 entorno y entre ${MIN_INTERIOR} y ${MAX_INTERIOR} interior.`);
       return;
     }
     if (!serviciosCompletos) {
@@ -208,13 +210,40 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
       return;
     }
     startTransition(async () => {
+      // Capturar GPS una vez antes de subir — se aplica a TODAS las fotos
+      // de esta visita. Si el navegador no da permiso, seguimos sin GPS.
+      let gpsData: { lat: number; lng: number; accuracy: number } | null = null;
+      if ('geolocation' in navigator) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 10_000,
+              maximumAge: 60_000,
+            }),
+          );
+          gpsData = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          };
+        } catch {
+          console.warn('GPS no disponible o denegado');
+        }
+      }
+
       const fd = new FormData();
       fd.append('avaluoId', avaluo.id);
       if (fachada) fd.append('fachada', fachada);
+      if (portada) fd.append('portada', portada);
       entornos.forEach((f) => f && fd.append('entorno', f));
       interiores.forEach((f) => f && fd.append('interior', f));
-      // Servicios como JSON string — el server los parsea y guarda en columna jsonb
+      // Servicios como JSON string
       fd.append('servicios', JSON.stringify(servicios));
+      // GPS — si lo capturamos, lo mandamos como JSON string
+      if (gpsData) {
+        fd.append('gps', JSON.stringify(gpsData));
+      }
 
       const res = await subirFotosVisitaAction(fd);
       mostrarToast(res.exito ? 'exito' : 'error', res.mensaje);
@@ -352,8 +381,36 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
             </p>
             <h2 className="text-lg font-black text-slate-900">Agendar visita al inmueble</h2>
             <p className="text-xs text-slate-500 mt-1">
-              Documentación validada. Programa la visita física al inmueble para tomar las fotografías requeridas (1 fachada, 2 entorno y entre {MIN_INTERIOR} y {MAX_INTERIOR} interior).
+              Documentación validada. Programa la visita física al inmueble para tomar las fotografías requeridas (1 fachada, 1 portada, 2 entorno y entre {MIN_INTERIOR} y {MAX_INTERIOR} interior).
             </p>
+            {/* Botón descargar checklist PDF */}
+            <button
+              type="button"
+              onClick={async () => {
+                const { pdf } = await import('@react-pdf/renderer');
+                const { default: ChecklistVisitaPdf } = await import('./ChecklistVisitaPdf');
+                const blob = await pdf(
+                  <ChecklistVisitaPdf
+                    folio={avaluo.folio || ''}
+                    direccion={direccionCompleta}
+                    propietario={null}
+                    fechaVisita={avaluo.fecha_visita_agendada
+                      ? new Date(avaluo.fecha_visita_agendada).toLocaleString('es-MX')
+                      : null}
+                  />
+                ).toBlob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `checklist-visita-${avaluo.folio || avaluo.id}.pdf`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="mt-2 text-[10px] font-bold text-orange-600 border border-orange-200 hover:bg-orange-50 rounded-lg px-3 py-1.5 transition inline-flex items-center gap-1.5"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              Descargar checklist de visita (PDF)
+            </button>
           </div>
 
           <div className="space-y-2">
@@ -387,8 +444,8 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
             </p>
             <h2 className="text-lg font-black text-slate-900">Subir las fotografías de la visita</h2>
             <p className="text-xs text-slate-500 mt-1">
-              Se requiere: <strong>1 fachada</strong>, <strong>2 entorno</strong> y{' '}
-              <strong>{MIN_INTERIOR} a {MAX_INTERIOR} interior</strong>. Total: {2 + 1 + MIN_INTERIOR} a {2 + 1 + MAX_INTERIOR} fotos.
+              Se requiere: <strong>1 fachada</strong>, <strong>1 portada</strong>, <strong>2 entorno</strong> y{' '}
+              <strong>{MIN_INTERIOR} a {MAX_INTERIOR} interior</strong>. Total: {2 + 1 + 1 + MIN_INTERIOR} a {2 + 1 + 1 + MAX_INTERIOR} fotos.
             </p>
           </div>
 
@@ -408,6 +465,25 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
               file={fachada}
               onClick={() => fachadaRef.current?.click()}
               etiqueta="Fachada principal"
+            />
+          </div>
+
+          {/* Portada */}
+          <div className="space-y-2">
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+              Portada (1) — {portada ? '✓' : 'pendiente'}
+            </p>
+            <input
+              ref={portadaRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => setPortada(e.target.files?.[0] || null)}
+            />
+            <SlotFoto
+              file={portada}
+              onClick={() => portadaRef.current?.click()}
+              etiqueta="Foto para portada del avalúo"
             />
           </div>
 
@@ -555,6 +631,7 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
           </div>
           <div className="grid grid-cols-3 gap-2 pt-2">
             <DotCount label="Fachada" count={contadoresFotos.fachada} esperado={1} />
+            <DotCount label="Portada" count={contadoresFotos.portada} esperado={1} />
             <DotCount label="Entorno" count={contadoresFotos.entorno} esperado={2} />
             <DotCount label="Interior" count={contadoresFotos.interior} esperado={`${MIN_INTERIOR}-${MAX_INTERIOR}`} />
           </div>

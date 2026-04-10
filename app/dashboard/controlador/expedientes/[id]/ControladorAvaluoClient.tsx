@@ -8,6 +8,7 @@ import {
   generarPreavaluoAction,
   pasarAFirmaAction,
   devolverAPrevaluoAction,
+  solicitarDocsFaltantesAction,
 } from '../actions';
 import { firmarUVAction, obtenerUrlPdfOficialAction } from '../../../firma/actions';
 
@@ -94,6 +95,8 @@ export default function ControladorAvaluoClient({ avaluo, comparables, contadore
   const [confirmarEliminar, setConfirmarEliminar] = useState<Comparable | null>(null);
   const [modalDevolverAbierto, setModalDevolverAbierto] = useState(false);
   const [motivoDevolucion, setMotivoDevolucion] = useState('');
+  const [modalDocsFaltantes, setModalDocsFaltantes] = useState(false);
+  const [motivoDocsFaltantes, setMotivoDocsFaltantes] = useState('');
 
   const mostrarToast = (tipo: 'exito' | 'error', texto: string) => {
     setToast({ tipo, texto });
@@ -155,6 +158,22 @@ export default function ControladorAvaluoClient({ avaluo, comparables, contadore
       const res = await pasarAFirmaAction(avaluo.id);
       mostrarToast(res.exito ? 'exito' : 'error', res.mensaje);
       if (res.exito) router.refresh();
+    });
+  };
+
+  const handleSolicitarDocs = () => {
+    if (motivoDocsFaltantes.trim().length < 10) {
+      mostrarToast('error', 'El motivo debe tener al menos 10 caracteres.');
+      return;
+    }
+    startTransition(async () => {
+      const res = await solicitarDocsFaltantesAction(avaluo.id, motivoDocsFaltantes.trim());
+      mostrarToast(res.exito ? 'exito' : 'error', res.mensaje);
+      if (res.exito) {
+        setModalDocsFaltantes(false);
+        setMotivoDocsFaltantes('');
+        router.refresh();
+      }
     });
   };
 
@@ -239,6 +258,18 @@ export default function ControladorAvaluoClient({ avaluo, comparables, contadore
         <Card label="Uso de suelo" valor={avaluo.uso_suelo || '—'} subtitulo={avaluo.uso_suelo_auto ? 'AUTO • QRO' : null} />
         <Card label="Fotos visita" valor={`${contadoresFotos.fachada + contadoresFotos.entorno + contadoresFotos.interior}/11`} />
       </section>
+
+      {/* Solicitar docs faltantes — visible en estados donde el controlador revisa documentación */}
+      {['visita_realizada', 'preavaluo', 'revision'].includes(avaluo.estado) && (
+        <button
+          type="button"
+          onClick={() => setModalDocsFaltantes(true)}
+          className="w-full text-[10px] font-bold text-amber-700 border-2 border-dashed border-amber-300 hover:bg-amber-50 rounded-xl py-2.5 transition flex items-center justify-center gap-2"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          Solicitar documentos faltantes al valuador
+        </button>
+      )}
 
       {/* Comparativa UV vs Valuador (solo si ya hay valor_uv) */}
       {avaluo.valor_uv && (
@@ -582,6 +613,49 @@ export default function ControladorAvaluoClient({ avaluo, comparables, contadore
               </button>
             </div>
           </form>
+        </Modal>
+      )}
+
+      {/* MODAL: SOLICITAR DOCUMENTOS FALTANTES */}
+      {modalDocsFaltantes && (
+        <Modal
+          titulo="Solicitar documentos faltantes"
+          onClose={() => { setModalDocsFaltantes(false); setMotivoDocsFaltantes(''); }}
+        >
+          <p className="text-sm text-slate-600 mb-3">
+            El expediente regresará al valuador en estado <span className="font-bold text-amber-700">Captura</span> para
+            que suba o corrija los documentos indicados.
+          </p>
+          <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+            ¿Qué documentos faltan o necesitan corrección?
+          </label>
+          <textarea
+            value={motivoDocsFaltantes}
+            onChange={(e) => setMotivoDocsFaltantes(e.target.value)}
+            placeholder="Ej: 'Falta el croquis del inmueble en el Título de Propiedad. La Boleta Predial es del 2023, necesito una del ejercicio actual.'"
+            rows={4}
+            className="w-full text-xs text-slate-800 bg-slate-50 border-2 border-slate-200 rounded-lg px-3 py-2.5 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-300 focus:border-amber-400 resize-none mb-3"
+          />
+          <p className={`text-[10px] font-bold mb-4 ${motivoDocsFaltantes.trim().length >= 10 ? 'text-emerald-600' : 'text-slate-400'}`}>
+            {motivoDocsFaltantes.trim().length}/10 caracteres mínimos
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => { setModalDocsFaltantes(false); setMotivoDocsFaltantes(''); }}
+              className="flex-1 py-3 border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-50 transition"
+            >
+              CANCELAR
+            </button>
+            <button
+              type="button"
+              onClick={handleSolicitarDocs}
+              disabled={pending || motivoDocsFaltantes.trim().length < 10}
+              className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-200 disabled:text-amber-400 text-white rounded-xl text-xs font-bold transition"
+            >
+              {pending ? 'ENVIANDO…' : 'SOLICITAR DOCS'}
+            </button>
+          </div>
         </Modal>
       )}
 

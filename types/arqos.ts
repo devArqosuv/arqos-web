@@ -18,8 +18,9 @@ export type EstadoAvaluo =
 export type CategoriaDocumento =
   | 'documento'   // PDFs/JPGs del expediente
   | 'fachada'     // 1 requerida
+  | 'portada'     // 1 requerida (foto para portada del avalúo)
   | 'entorno'     // 2 requeridas
-  | 'interior'    // 8 requeridas
+  | 'interior'    // 5 a 8 requeridas
   | 'uso_suelo'   // imagen de uso de suelo cuando NO es Querétaro
   | 'otro'
 

@@ -93,7 +93,7 @@ export async function agendarVisitaAction(
 // ────────────────────────────────────────────────────────────
 // SUBIR FOTOS DE LA VISITA Y MARCAR COMO REALIZADA
 // agenda_visita → visita_realizada
-// Espera: 1 fachada + 2 entorno + 5 a 8 interior (rango)
+// Espera: 1 fachada + 1 portada + 2 entorno + 5 a 8 interior
 // ────────────────────────────────────────────────────────────
 export async function subirFotosVisitaAction(formData: FormData): Promise<Resultado> {
   try {
@@ -103,8 +103,23 @@ export async function subirFotosVisitaAction(formData: FormData): Promise<Result
     const userId = await asegurarPropietarioAvaluo(avaluoId);
 
     const fachadas = formData.getAll('fachada') as File[];
+    const portadas = formData.getAll('portada') as File[];
     const entornos = formData.getAll('entorno') as File[];
     const interiores = formData.getAll('interior') as File[];
+
+    // GPS capturado del navegador — se aplica a todas las fotos de la visita
+    const gpsRaw = String(formData.get('gps') || '');
+    let gpsParsed: { lat: number; lng: number; accuracy: number } | null = null;
+    if (gpsRaw) {
+      try {
+        const parsed = JSON.parse(gpsRaw);
+        if (parsed && typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
+          gpsParsed = parsed as { lat: number; lng: number; accuracy: number };
+        }
+      } catch {
+        // GPS inválido — no bloqueamos, seguimos sin GPS
+      }
+    }
 
     // Verificación de servicios — llega como JSON string, se guarda en columna jsonb
     const serviciosRaw = String(formData.get('servicios') || '');
@@ -130,6 +145,9 @@ export async function subirFotosVisitaAction(formData: FormData): Promise<Result
     if (fachadas.length !== 1) {
       return { exito: false, mensaje: 'Debes subir exactamente 1 foto de fachada.' };
     }
+    if (portadas.length !== 1) {
+      return { exito: false, mensaje: 'Debes subir exactamente 1 foto de portada.' };
+    }
     if (entornos.length !== 2) {
       return { exito: false, mensaje: 'Debes subir exactamente 2 fotos de entorno.' };
     }
@@ -141,6 +159,7 @@ export async function subirFotosVisitaAction(formData: FormData): Promise<Result
     type FotoTask = { file: File; categoria: CategoriaDocumento; etiqueta: string };
     const tareas: FotoTask[] = [
       ...fachadas.map((f) => ({ file: f, categoria: 'fachada' as const, etiqueta: 'Fachada' })),
+      ...portadas.map((f) => ({ file: f, categoria: 'portada' as const, etiqueta: 'Portada' })),
       ...entornos.map((f, i) => ({ file: f, categoria: 'entorno' as const, etiqueta: `Entorno ${i + 1}` })),
       ...interiores.map((f, i) => ({ file: f, categoria: 'interior' as const, etiqueta: `Interior ${i + 1}` })),
     ];
@@ -186,6 +205,14 @@ export async function subirFotosVisitaAction(formData: FormData): Promise<Result
         tamanio_bytes: t.file.size,
         categoria: t.categoria,
         created_by: userId,
+        // Georreferenciación: se aplica la misma ubicación a todas las fotos
+        // de la visita (capturada una sola vez del browser).
+        ...(gpsParsed ? {
+          latitud:          gpsParsed.lat,
+          longitud:         gpsParsed.lng,
+          gps_accuracy:     gpsParsed.accuracy,
+          gps_capturado_at: new Date().toISOString(),
+        } : {}),
       });
 
       if (errInsert) {
