@@ -526,31 +526,40 @@ export default function AvaluosClient() {
       const supabase = createClient();
       const erroresUpload: string[] = [];
 
-      // PASO 2 — mover archivos de temp/ a avaluos/{id}/
+      // PASO 2 — subir archivos a avaluos/{id}/ (re-upload desde memoria del browser)
+      // Los archivos originales siguen en docsCustom.file. Es más confiable que
+      // storage.copy() que tiene problemas con RLS policies.
       const subidosOk: { docId: string; docNombre: string; storagePath: string; contentType: string; tamanio: number; categoria?: 'uso_suelo' }[] = [];
 
-      for (const temp of archivosTemp) {
-        const ext = (temp.storagePath.split('.').pop() || '').toLowerCase();
-        const finalPath = `avaluos/${avaluoId}/${temp.docId}-${Date.now()}.${ext}`;
+      const docsConArchivo = docsCustom
+        .filter((d): d is DocCustom & { file: File } => !!d.file && !!d.nombre.trim());
 
-        const { error: errCopy } = await supabase.storage
+      for (const doc of docsConArchivo) {
+        const ext = (doc.file.name.split('.').pop() || '').toLowerCase();
+        const contentType = doc.file.type || 'application/octet-stream';
+        const finalPath = `avaluos/${avaluoId}/${doc.id}-${Date.now()}.${ext}`;
+
+        const { error: errUpload } = await supabase.storage
           .from('documentos')
-          .copy(temp.storagePath, finalPath);
+          .upload(finalPath, doc.file, { contentType, upsert: false });
 
-        if (errCopy) {
-          erroresUpload.push(`${temp.docNombre}: error al mover: ${errCopy.message}`);
+        if (errUpload) {
+          erroresUpload.push(`${doc.nombre}: ${errUpload.message}`);
           continue;
         }
 
-        await supabase.storage.from('documentos').remove([temp.storagePath]);
-
         subidosOk.push({
-          docId: temp.docId,
-          docNombre: temp.docNombre,
+          docId: doc.id,
+          docNombre: doc.nombre.trim(),
           storagePath: finalPath,
-          contentType: temp.contentType,
-          tamanio: temp.tamanio,
+          contentType,
+          tamanio: doc.file.size,
         });
+      }
+
+      // Limpiar archivos temporales (best-effort)
+      for (const temp of archivosTemp) {
+        await supabase.storage.from('documentos').remove([temp.storagePath]);
       }
 
       // Subir uso de suelo si aplica
