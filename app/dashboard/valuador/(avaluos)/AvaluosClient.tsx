@@ -322,32 +322,19 @@ export default function AvaluosClient() {
     setGuardadoResult(null);
   };
 
+  // Rutas temporales subidas a Storage para el análisis de IA.
+  // Se reutilizan al guardar para no subir 2 veces.
+  const [tempStoragePaths, setTempStoragePaths] = useState<
+    { docId: string; docNombre: string; storagePath: string; contentType: string; tamanio: number }[]
+  >([]);
+
   const handleAnalizarAvaluo = async () => {
     if (!todosSubidos || !tipoAvaluo) return;
     setAnalizando(true);
     setResultado(null);
-    // Limpiar cualquier override manual previo: un nuevo análisis es punto cero.
     setValidacionManual(false);
     setMotivoOverride('');
 
-    const formData = new FormData();
-    formData.append('tipoAvaluo', tipoAvaluo);
-    if (tipoAvaluo === '2.0' && bancoSeleccionado) {
-      formData.append('banco', bancoSeleccionado);
-    }
-
-    const docsParaEnviar: { id: string; nombre: string; file: File }[] = docsCustom
-      .filter((d): d is DocCustom & { file: File } => !!d.file && !!d.nombre.trim())
-      .map((d) => ({ id: d.id, nombre: d.nombre.trim(), file: d.file }));
-
-    docsParaEnviar.forEach((doc) => {
-      formData.append('pdfs', doc.file);
-      formData.append('docIds', doc.id);
-      formData.append('docNombres', doc.nombre);
-    });
-
-    // Helper local: construye un ResultadoAnalisis "vacío" con un mensaje de error
-    // específico en errores_bloqueantes. Lo usamos para todos los modos de fallo.
     const resultadoConError = (mensaje: string): ResultadoAnalisis => ({
       valido: false,
       errores_bloqueantes: [mensaje],
@@ -363,11 +350,65 @@ export default function AvaluosClient() {
     });
 
     try {
-      const res = await fetch('/api/analizar-avaluo', { method: 'POST', body: formData });
+      // PASO 1: Subir archivos a Storage en ruta temporal (directo a Supabase, no pasa por Vercel)
+      const supabase = createClient();
+      const MIME_PERMITIDOS: Record<string, string> = {
+        pdf: 'application/pdf',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+        xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        xls: 'application/vnd.ms-excel',
+      };
 
-      // Intentar parsear JSON aunque el status no sea 2xx — el endpoint devuelve
-      // { error: "..." } también en errores. Si el body no es JSON válido,
-      // capturamos el texto crudo para mostrarlo.
+      const docsParaEnviar = docsCustom
+        .filter((d): d is DocCustom & { file: File } => !!d.file && !!d.nombre.trim())
+        .map((d) => ({ id: d.id, nombre: d.nombre.trim(), file: d.file }));
+
+      const tempId = `temp-${Date.now()}`;
+      const subidos: typeof tempStoragePaths = [];
+
+      for (const doc of docsParaEnviar) {
+        const ext = (doc.file.name.split('.').pop() || '').toLowerCase();
+        const contentType = MIME_PERMITIDOS[ext] ?? doc.file.type ?? 'application/octet-stream';
+        const storagePath = `temp/${tempId}/${doc.id}-${Date.now()}.${ext}`;
+
+        const { error: errUpload } = await supabase.storage
+          .from('documentos')
+          .upload(storagePath, doc.file, { contentType, upsert: false });
+
+        if (errUpload) {
+          setResultado(resultadoConError(`Error al subir ${doc.nombre}: ${errUpload.message}`));
+          return;
+        }
+
+        subidos.push({
+          docId: doc.id,
+          docNombre: doc.nombre,
+          storagePath,
+          contentType,
+          tamanio: doc.file.size,
+        });
+      }
+
+      setTempStoragePaths(subidos);
+
+      // PASO 2: Llamar a la API con JSON ligero (solo rutas, <1KB)
+      const res = await fetch('/api/analizar-avaluo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tipoAvaluo,
+          banco: tipoAvaluo === '2.0' && bancoSeleccionado ? bancoSeleccionado : undefined,
+          documentos: subidos.map((s) => ({
+            id: s.docId,
+            nombre: s.docNombre,
+            storagePath: s.storagePath,
+            contentType: s.contentType,
+          })),
+        }),
+      });
+
       let raw: unknown;
       try {
         raw = await res.json();
@@ -379,7 +420,6 @@ export default function AvaluosClient() {
         return;
       }
 
-      // Si el endpoint devolvió un error explícito, lo mostramos directo
       if (!res.ok) {
         const r = raw as { error?: string; raw?: string } | null;
         const mensaje = r?.error
@@ -389,8 +429,6 @@ export default function AvaluosClient() {
         return;
       }
 
-      // Status OK: sanitizar la respuesta. La IA debería devolver el shape completo
-      // pero por defensa garantizamos arrays no-undefined y datos_consolidados completo.
       const r = raw as Partial<ResultadoAnalisis> & { error?: string };
       const data: ResultadoAnalisis = {
         valido: typeof r?.valido === 'boolean' ? r.valido : false,
@@ -471,32 +509,15 @@ export default function AvaluosClient() {
       uso_suelo_auto: usoSueloAuto,
     };
 
-    // Reunir todos los archivos a subir (docs del expediente + uso de suelo si aplica)
-    const archivosBase = docsCustom
-      .filter((d): d is DocCustom & { file: File } => !!d.file && !!d.nombre.trim())
-      .map((d) => ({ docId: d.id, docNombre: d.nombre.trim(), file: d.file, categoria: undefined as 'uso_suelo' | undefined }));
-
-    const archivos = (!inmuebleEnQro && usoSueloFile)
-      ? [
-          ...archivosBase,
-          {
-            docId: 'uso-suelo',
-            docNombre: 'Acreditación de uso de suelo (imagen)',
-            file: usoSueloFile,
-            categoria: 'uso_suelo' as const,
-          },
-        ]
-      : archivosBase;
-
     // ───────────────────────────────────────────────────────
-    // FLUJO DE GUARDADO (Direct Upload a Supabase Storage)
+    // FLUJO DE GUARDADO
     //
-    // 1. Server action: crear avalúo vacío → recibe { id, folio }
-    //    (request <50KB, sin archivos)
-    // 2. Browser: subir cada archivo DIRECTO a Supabase Storage
-    //    (no pasa por Vercel, sin cap de 4.5 MB)
-    // 3. Server action: registrar los documentos subidos en la tabla
-    //    (request <50KB, solo metadata)
+    // Los archivos ya están en Supabase Storage (subidos en el análisis de IA
+    // a rutas temp/). Ahora:
+    // 1. Crear avalúo vacío → recibe { id, folio }
+    // 2. Mover archivos de temp/ a avaluos/{id}/ (copy + delete)
+    // 3. Si hay uso de suelo extra, subirlo aparte
+    // 4. Registrar documentos en la tabla
     // ───────────────────────────────────────────────────────
     try {
       // PASO 1 — crear avalúo vacío
@@ -508,48 +529,59 @@ export default function AvaluosClient() {
 
       const avaluoId = resCrear.avaluo_id;
       const folio = resCrear.folio;
-
-      // PASO 2 — subir archivos directo al Storage en paralelo
       const supabase = createClient();
-      const MIME_PERMITIDOS: Record<string, string> = {
-        pdf:  'application/pdf',
-        jpg:  'image/jpeg',
-        jpeg: 'image/jpeg',
-        png:  'image/png',
-      };
+      const erroresUpload: string[] = [];
 
-      const subidosResult = await Promise.all(
-        archivos.map(async (archivo) => {
-          const ext = (archivo.file.name.split('.').pop() || '').toLowerCase();
-          const contentType = MIME_PERMITIDOS[ext] ?? archivo.file.type ?? 'application/octet-stream';
-          if (!MIME_PERMITIDOS[ext]) {
-            return { ok: false as const, error: `${archivo.docNombre}: formato no permitido (${ext})` };
-          }
-          const storagePath = `avaluos/${avaluoId}/${archivo.docId}-${Date.now()}.${ext}`;
-          const { error: errUpload } = await supabase.storage
-            .from('documentos')
-            .upload(storagePath, archivo.file, { contentType, upsert: false });
-          if (errUpload) {
-            return { ok: false as const, error: `${archivo.docNombre}: ${errUpload.message}` };
-          }
-          return {
-            ok: true as const,
-            doc: {
-              docId: archivo.docId,
-              docNombre: archivo.docNombre,
-              storagePath,
-              contentType,
-              tamanio: archivo.file.size,
-              categoria: archivo.categoria,
-            },
-          };
-        }),
-      );
+      // PASO 2 — mover archivos de temp/ a avaluos/{id}/
+      const subidosOk: { docId: string; docNombre: string; storagePath: string; contentType: string; tamanio: number; categoria?: 'uso_suelo' }[] = [];
 
-      const erroresUpload = subidosResult.filter((r) => !r.ok).map((r) => (r as { error: string }).error);
-      const subidosOk = subidosResult
-        .filter((r): r is { ok: true; doc: { docId: string; docNombre: string; storagePath: string; contentType: string; tamanio: number; categoria: 'uso_suelo' | undefined } } => r.ok)
-        .map((r) => r.doc);
+      for (const temp of tempStoragePaths) {
+        const ext = (temp.storagePath.split('.').pop() || '').toLowerCase();
+        const finalPath = `avaluos/${avaluoId}/${temp.docId}-${Date.now()}.${ext}`;
+
+        // Copy from temp to final path
+        const { error: errCopy } = await supabase.storage
+          .from('documentos')
+          .copy(temp.storagePath, finalPath);
+
+        if (errCopy) {
+          erroresUpload.push(`${temp.docNombre}: error al mover archivo: ${errCopy.message}`);
+          continue;
+        }
+
+        // Delete temp file (best-effort, don't fail if this errors)
+        await supabase.storage.from('documentos').remove([temp.storagePath]);
+
+        subidosOk.push({
+          docId: temp.docId,
+          docNombre: temp.docNombre,
+          storagePath: finalPath,
+          contentType: temp.contentType,
+          tamanio: temp.tamanio,
+        });
+      }
+
+      // PASO 2b — subir uso de suelo si aplica (no pasó por la IA)
+      if (!inmuebleEnQro && usoSueloFile) {
+        const ext = (usoSueloFile.name.split('.').pop() || '').toLowerCase();
+        const contentType = usoSueloFile.type || 'application/octet-stream';
+        const storagePath = `avaluos/${avaluoId}/uso-suelo-${Date.now()}.${ext}`;
+        const { error: errUpload } = await supabase.storage
+          .from('documentos')
+          .upload(storagePath, usoSueloFile, { contentType, upsert: false });
+        if (errUpload) {
+          erroresUpload.push(`Uso de suelo: ${errUpload.message}`);
+        } else {
+          subidosOk.push({
+            docId: 'uso-suelo',
+            docNombre: 'Acreditación de uso de suelo (imagen)',
+            storagePath,
+            contentType,
+            tamanio: usoSueloFile.size,
+            categoria: 'uso_suelo',
+          });
+        }
+      }
 
       // PASO 3 — registrar los subidos en la tabla documentos
       if (subidosOk.length > 0) {

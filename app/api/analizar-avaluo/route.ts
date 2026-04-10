@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/util/supabase/server';
 import * as XLSX from 'xlsx';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
@@ -21,7 +22,6 @@ const MIME_PERMITIDOS: Record<string, string> = {
 };
 
 // Convierte un buffer XLSX/XLS a texto Markdown legible para la IA.
-// Cada hoja se renderiza como una sección con su nombre + tabla CSV.
 function xlsxBufferToMarkdown(buffer: ArrayBuffer): string {
   const wb = XLSX.read(buffer, { type: 'array' });
   const partes: string[] = [];
@@ -34,9 +34,11 @@ function xlsxBufferToMarkdown(buffer: ArrayBuffer): string {
   return partes.length > 0 ? partes.join('\n\n') : '(hoja de cálculo vacía)';
 }
 
-function detectarMime(fileName: string, fallback: string): string {
-  const ext = (fileName.split('.').pop() || '').toLowerCase();
-  return MIME_PERMITIDOS[ext] ?? fallback;
+interface DocInput {
+  id: string;
+  nombre: string;
+  storagePath: string;
+  contentType: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -48,42 +50,55 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const formData = await req.formData();
-    const tipoAvaluo = formData.get('tipoAvaluo') as string;
-    const files = formData.getAll('pdfs') as File[];
-    const docIds = formData.getAll('docIds') as string[];
-    const docNombres = formData.getAll('docNombres') as string[];
+    // Ahora recibimos JSON ligero (<1KB) con rutas de Storage, no archivos pesados
+    const body = await req.json() as {
+      tipoAvaluo: string;
+      banco?: string;
+      documentos: DocInput[];
+    };
 
-    if (!files || files.length === 0) {
-      return NextResponse.json({ error: 'No se recibieron archivos.' }, { status: 400 });
+    const { tipoAvaluo, documentos } = body;
+
+    if (!documentos || documentos.length === 0) {
+      return NextResponse.json({ error: 'No se recibieron documentos.' }, { status: 400 });
     }
     if (!tipoAvaluo || !['1.0', '2.0'].includes(tipoAvaluo)) {
       return NextResponse.json({ error: 'Tipo de avalúo inválido.' }, { status: 400 });
     }
 
-    // Convertir cada archivo. Para PDF/imagen → base64. Para XLSX → texto Markdown server-side.
-    const documentos = await Promise.all(
-      files.map(async (file, index) => {
-        const bytes = await file.arrayBuffer();
-        const mime = detectarMime(file.name, file.type || 'application/octet-stream');
+    // Descargar cada archivo desde Supabase Storage server-side
+    const supabase = await createClient();
+
+    const docsDescargados = await Promise.all(
+      documentos.map(async (doc) => {
+        const { data, error } = await supabase.storage
+          .from('documentos')
+          .download(doc.storagePath);
+
+        if (error || !data) {
+          throw new Error(`No se pudo descargar ${doc.nombre}: ${error?.message || 'archivo no encontrado'}`);
+        }
+
+        const bytes = await data.arrayBuffer();
+        const ext = (doc.storagePath.split('.').pop() || '').toLowerCase();
+        const mime = MIME_PERMITIDOS[ext] ?? doc.contentType ?? 'application/octet-stream';
         const esExcel =
           mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
           mime === 'application/vnd.ms-excel';
+
         return {
-          id: docIds[index],
-          nombre: docNombres[index],
-          fileName: file.name,
+          id: doc.id,
+          nombre: doc.nombre,
+          fileName: doc.storagePath.split('/').pop() || doc.nombre,
           mime,
-          // Sólo guardamos base64 cuando es PDF/imagen (lo necesita el contenido multimodal)
           base64: esExcel ? null : Buffer.from(bytes).toString('base64'),
-          // Sólo convertimos a Markdown cuando es Excel
           markdown: esExcel ? xlsxBufferToMarkdown(bytes) : null,
         };
       })
     );
 
-    // Validar que todos los archivos sean de un formato soportado
-    const formatoInvalido = documentos.find(
+    // Validar formatos
+    const formatoInvalido = docsDescargados.find(
       (d) => !Object.values(MIME_PERMITIDOS).includes(d.mime)
     );
     if (formatoInvalido) {
@@ -93,17 +108,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Construir el contenido multimodal: cada doc etiquetado + PDF como `file`, imagen como `image_url`, XLSX como texto
+    // Construir contenido multimodal
     const contentBlocks: ContentPart[] = [];
 
-    for (const doc of documentos) {
+    for (const doc of docsDescargados) {
       contentBlocks.push({
         type: 'text',
         text: `\n===== DOCUMENTO ${doc.id}: ${doc.nombre} (archivo: ${doc.fileName}) =====`,
       });
 
       if (doc.markdown !== null) {
-        // Hoja de cálculo: la insertamos como bloque de texto tabular
         contentBlocks.push({
           type: 'text',
           text: `\n[Hoja de cálculo extraída del archivo ${doc.fileName}. Trátalo como datos tabulares — extrae las columnas/valores relevantes; no intentes validarlo como Título o Boleta]\n\n${doc.markdown}\n`,
@@ -119,7 +133,6 @@ export async function POST(req: NextRequest) {
           file: { filename: doc.fileName, file_data: dataUrl },
         });
       } else {
-        // image/jpeg o image/png
         contentBlocks.push({
           type: 'image_url',
           image_url: { url: dataUrl },
@@ -130,7 +143,7 @@ export async function POST(req: NextRequest) {
     contentBlocks.push({
       type: 'text',
       text: `
-Eres un perito valuador experto en avalúos bancarios mexicanos. Recibirás ${documentos.length} documentos (PDF o imágenes JPG/PNG) de un expediente de avalúo tipo ${tipoAvaluo} y debes analizarlos con criterios profesionales ESTRICTOS. Tu trabajo es proteger al banco y al cliente de fraudes y errores: PREFIERE BLOQUEAR un expediente válido que dejar pasar uno inválido.
+Eres un perito valuador experto en avalúos bancarios mexicanos. Recibirás ${docsDescargados.length} documentos (PDF o imágenes JPG/PNG) de un expediente de avalúo tipo ${tipoAvaluo} y debes analizarlos con criterios profesionales ESTRICTOS. Tu trabajo es proteger al banco y al cliente de fraudes y errores: PREFIERE BLOQUEAR un expediente válido que dejar pasar uno inválido.
 
 ═══════════════════════════════════════════════════════════════
 REGLA NÚMERO UNO — INDISPENSABLE — IDENTIFICACIÓN DE TIPO
@@ -344,27 +357,23 @@ REGLAS CRÍTICAS DE SALIDA:
 - Las advertencias (ej. diferencia de superficie menor) van en "datos_consolidados.observaciones", NO en errores_bloqueantes.
 - Si un documento está en blanco, corrupto o no corresponde al tipo indicado, es un error bloqueante.
 - "datos_consolidados" solo se llena con datos confirmados y consistentes. Si hay conflicto, pon null en ese campo.
-- El array "documentos" debe tener exactamente ${documentos.length} elementos, uno por cada documento recibido, en el mismo orden.
+- El array "documentos" debe tener exactamente ${docsDescargados.length} elementos, uno por cada documento recibido, en el mismo orden.
 - Responde SOLO con el JSON.
       `,
     });
 
-    // Llamada a OpenRouter (formato OpenAI-compatible)
+    // Llamada a OpenRouter
     const openrouterRes = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        // Opcional pero recomendado por OpenRouter para analíticas
         'HTTP-Referer': process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://arqos.local',
         'X-Title': 'ARQOS - Validador de expedientes',
       },
       body: JSON.stringify({
         model: MODEL,
-        // 8192 da margen suficiente para validar 5+ documentos sin que se corte el JSON
         max_tokens: 8192,
-        // JSON mode: fuerza al modelo a devolver SIEMPRE un JSON válido,
-        // sin preámbulo ni postámbulo, sin markdown.
         response_format: { type: 'json_object' },
         messages: [{ role: 'user', content: contentBlocks }],
       }),
@@ -389,10 +398,7 @@ REGLAS CRÍTICAS DE SALIDA:
       );
     }
 
-    // Estrategia de parseo tolerante:
-    //  1. Quitar fences markdown (```json ... ```)
-    //  2. Si aún falla, extraer el primer bloque {...} del texto
-    //  3. Si aún falla, log detallado y error explícito
+    // Parseo tolerante (3 capas)
     let parsed: unknown;
     const intentoParseo = (texto: string): unknown | null => {
       try { return JSON.parse(texto); } catch { return null; }
@@ -402,7 +408,6 @@ REGLAS CRÍTICAS DE SALIDA:
     parsed = intentoParseo(sinFences);
 
     if (parsed === null) {
-      // Buscar el primer { y el último } y probar con ese substring
       const primeroLlave = sinFences.indexOf('{');
       const ultimaLlave = sinFences.lastIndexOf('}');
       if (primeroLlave !== -1 && ultimaLlave > primeroLlave) {
@@ -416,7 +421,7 @@ REGLAS CRÍTICAS DE SALIDA:
       return NextResponse.json(
         {
           error: 'La IA no pudo generar una respuesta estructurada. Intenta de nuevo.',
-          raw: rawText.slice(0, 500), // primeros 500 chars para que el cliente lo muestre
+          raw: rawText.slice(0, 500),
         },
         { status: 500 }
       );
