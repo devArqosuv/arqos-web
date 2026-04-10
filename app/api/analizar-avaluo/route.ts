@@ -280,10 +280,12 @@ CRITERIOS DE VALIDACIÓN CRUZADA (sólo aplican a docs con tipo correcto)
 ═══════════════════════════════════════════════════════════════
 
 1. NOMBRE DEL PROPIETARIO:
-   - Debe ser IDÉNTICO en el Título de Propiedad y la Boleta Predial/Cédula Catastral.
-   - Acepta variaciones menores de formato (mayúsculas, orden de apellidos) pero el nombre debe corresponder a la misma persona.
-   - Si no coincide → ERROR BLOQUEANTE.
-   - CASO ESPECIAL: Si la identificación oficial del SOLICITANTE del crédito tiene un nombre DISTINTO al propietario actual del Título, eso indica una compraventa en proceso. DEBE existir además un documento que acredite la transmisión (contrato de compraventa, promesa, instrucción notarial). Si no está → ERROR BLOQUEANTE.
+   - Debe coincidir entre el Título de Propiedad y la Boleta Predial/Cédula Catastral.
+   - REGLA CRÍTICA DE NOMBRES MEXICANOS: En documentos oficiales mexicanos, el orden del nombre varía CONSTANTEMENTE entre documentos. Un documento puede decir "MARIA ELENA FRAUSTO ROMERO" (nombre + apellidos) y otro "FRAUSTO ROMERO MARIA ELENA" (apellidos + nombre). ESTO ES LA MISMA PERSONA — NO es un error.
+   - Para comparar nombres: extrae TODAS las palabras del nombre, ignora el orden, ignora mayúsculas/minúsculas, ignora acentos. Si las mismas palabras aparecen en ambos documentos → ES LA MISMA PERSONA → VÁLIDO.
+   - Solo marca ERROR BLOQUEANTE si los nombres son de personas claramente DIFERENTES (palabras completamente distintas, no solo reordenadas).
+   - SOBRE LA IDENTIFICACIÓN OFICIAL DEL SOLICITANTE: En avalúos bancarios para crédito, el SOLICITANTE del crédito (comprador) y el PROPIETARIO actual del inmueble (vendedor) son personas DIFERENTES. La INE del solicitante NO tiene que coincidir con el nombre del Título de Propiedad. Son dos personas distintas en la operación de compraventa. NUNCA marques error por esta diferencia — es completamente normal y esperado.
+   - La INE del PROPIETARIO (si se incluye) SÍ debe coincidir con el nombre del Título.
 
 2. DIRECCIÓN/UBICACIÓN DEL INMUEBLE:
    - IMPORTANTE: En avalúos mexicanos, la dirección frecuentemente NO aparece en el mismo orden o formato entre Título y Boleta Predial.
