@@ -26,6 +26,7 @@ export default async function AvaluoDetailPage({
       fecha_solicitud, fecha_visita_agendada, fecha_visita_realizada,
       firmado_uv, firmado_valuador, fecha_firma_uv, fecha_firma_valuador,
       pdf_oficial_path,
+      verificacion_servicios,
       valuador_id, solicitante_id,
       valuador:valuador_id (nombre, apellidos)
     `)
@@ -95,6 +96,7 @@ export default async function AvaluoDetailPage({
               fecha_firma_valuador: avaluoRaw.fecha_firma_valuador,
               pdf_oficial_path: avaluoRaw.pdf_oficial_path,
               valuador,
+              verificacion_servicios: (avaluoRaw as { verificacion_servicios: unknown }).verificacion_servicios as import('./AvaluoDetailClient').VerificacionServicios | null,
             }}
             contadoresFotos={contadores}
           />

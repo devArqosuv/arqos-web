@@ -82,6 +82,9 @@ export async function guardarAvaluo(
       banco_id:                payload.banco_id || null,
       uso_suelo:               payload.uso_suelo || null,
       uso_suelo_auto:          payload.uso_suelo_auto ?? false,
+      // Código del tipo — lo lee el trigger fn_asignar_folio_avaluo
+      // para generar PE-YYYY-NNNN (1.0) o CR-YYYY-NNNN (2.0)
+      tipo_avaluo_codigo:      payload.tipo_avaluo,
       estado:                  'captura',           // Empieza en captura al guardarse
       valuador_id:             user.id,             // El evaluador actual es el valuador
       solicitante_id:          user.id,

@@ -93,7 +93,7 @@ export async function agendarVisitaAction(
 // ────────────────────────────────────────────────────────────
 // SUBIR FOTOS DE LA VISITA Y MARCAR COMO REALIZADA
 // agenda_visita → visita_realizada
-// Espera EXACTO: 1 fachada + 2 entorno + 8 interior
+// Espera: 1 fachada + 2 entorno + 5 a 8 interior (rango)
 // ────────────────────────────────────────────────────────────
 export async function subirFotosVisitaAction(formData: FormData): Promise<Resultado> {
   try {
@@ -106,6 +106,26 @@ export async function subirFotosVisitaAction(formData: FormData): Promise<Result
     const entornos = formData.getAll('entorno') as File[];
     const interiores = formData.getAll('interior') as File[];
 
+    // Verificación de servicios — llega como JSON string, se guarda en columna jsonb
+    const serviciosRaw = String(formData.get('servicios') || '');
+    let serviciosParsed: Record<string, string> | null = null;
+    if (serviciosRaw) {
+      try {
+        const parsed = JSON.parse(serviciosRaw);
+        if (parsed && typeof parsed === 'object') {
+          serviciosParsed = parsed as Record<string, string>;
+        }
+      } catch {
+        return { exito: false, mensaje: 'Los servicios enviados no son un JSON válido.' };
+      }
+    }
+    // Validar que los 6 servicios estén presentes
+    const SERVICIOS_REQUERIDOS = ['agua', 'luz', 'alumbrado_publico', 'banquetas', 'tipo_calles', 'telefono_internet'];
+    const faltantes = SERVICIOS_REQUERIDOS.filter((k) => !serviciosParsed?.[k]);
+    if (faltantes.length > 0) {
+      return { exito: false, mensaje: `Faltan servicios por llenar: ${faltantes.join(', ')}.` };
+    }
+
     // Validación estricta de cantidades
     if (fachadas.length !== 1) {
       return { exito: false, mensaje: 'Debes subir exactamente 1 foto de fachada.' };
@@ -113,8 +133,8 @@ export async function subirFotosVisitaAction(formData: FormData): Promise<Result
     if (entornos.length !== 2) {
       return { exito: false, mensaje: 'Debes subir exactamente 2 fotos de entorno.' };
     }
-    if (interiores.length !== 8) {
-      return { exito: false, mensaje: 'Debes subir exactamente 8 fotos de interior.' };
+    if (interiores.length < 5 || interiores.length > 8) {
+      return { exito: false, mensaje: 'Debes subir entre 5 y 8 fotos de interior.' };
     }
 
     // Validar todos los formatos antes de empezar a subir
@@ -180,10 +200,13 @@ export async function subirFotosVisitaAction(formData: FormData): Promise<Result
       };
     }
 
-    // Marcar visita como realizada y cambiar estado
+    // Marcar visita como realizada, guardar servicios y cambiar estado
     const { error: errUpdate } = await supabase
       .from('avaluos')
-      .update({ fecha_visita_realizada: new Date().toISOString() })
+      .update({
+        fecha_visita_realizada: new Date().toISOString(),
+        verificacion_servicios: serviciosParsed,
+      })
       .eq('id', avaluoId);
 
     if (errUpdate) {
@@ -194,7 +217,7 @@ export async function subirFotosVisitaAction(formData: FormData): Promise<Result
       p_avaluo_id: avaluoId,
       p_nuevo_estado: 'visita_realizada',
       p_usuario_id: userId,
-      p_comentario: 'Visita realizada y 11 fotografías subidas',
+      p_comentario: `Visita realizada y ${tareas.length} fotografías subidas`,
     });
 
     if (rpcError || !rpcData?.exito) {
@@ -204,7 +227,7 @@ export async function subirFotosVisitaAction(formData: FormData): Promise<Result
     revalidatePath(`/dashboard/valuador/expedientes/${avaluoId}`);
     revalidatePath('/dashboard/valuador/expedientes');
 
-    return { exito: true, mensaje: 'Visita registrada y 11 fotografías subidas correctamente.' };
+    return { exito: true, mensaje: `Visita registrada y ${tareas.length} fotografías subidas correctamente.` };
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Error desconocido';
     return { exito: false, mensaje: msg };

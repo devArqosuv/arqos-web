@@ -9,6 +9,63 @@ import {
 } from '../actions';
 import { firmarValuadorAction, obtenerUrlPdfOficialAction } from '../../../firma/actions';
 
+// ─────────────────────────────────────────────────────────
+// Verificación de servicios (Fase 3 del diagrama)
+// ─────────────────────────────────────────────────────────
+export interface VerificacionServicios {
+  agua?: string;
+  luz?: string;
+  alumbrado_publico?: string;
+  banquetas?: string;
+  tipo_calles?: string;
+  telefono_internet?: string;
+}
+
+const OPCIONES_SERVICIOS: Record<keyof VerificacionServicios, { value: string; label: string }[]> = {
+  agua: [
+    { value: 'municipal',   label: 'Municipal / Red pública' },
+    { value: 'pozo',        label: 'Pozo propio' },
+    { value: 'pipa',        label: 'Pipa' },
+    { value: 'no_hay',      label: 'No hay servicio' },
+  ],
+  luz: [
+    { value: 'cfe',         label: 'CFE (red pública)' },
+    { value: 'planta',      label: 'Planta propia / Solar' },
+    { value: 'no_hay',      label: 'No hay servicio' },
+  ],
+  alumbrado_publico: [
+    { value: 'si',          label: 'Sí hay' },
+    { value: 'parcial',     label: 'Parcial' },
+    { value: 'no',          label: 'No hay' },
+  ],
+  banquetas: [
+    { value: 'si',          label: 'Sí hay' },
+    { value: 'parcial',     label: 'Parcial' },
+    { value: 'no',          label: 'No hay' },
+  ],
+  tipo_calles: [
+    { value: 'pavimentada', label: 'Pavimentada / Asfalto' },
+    { value: 'concreto',    label: 'Concreto hidráulico' },
+    { value: 'empedrado',   label: 'Empedrado' },
+    { value: 'terraceria',  label: 'Terracería' },
+  ],
+  telefono_internet: [
+    { value: 'fibra',       label: 'Fibra óptica' },
+    { value: 'cable',       label: 'Cable / ADSL' },
+    { value: 'inalambrico', label: 'Inalámbrico / Satelital' },
+    { value: 'no_hay',      label: 'No hay servicio' },
+  ],
+};
+
+const LABELS_SERVICIOS: Record<keyof VerificacionServicios, string> = {
+  agua:              'Agua',
+  luz:               'Luz',
+  alumbrado_publico: 'Alumbrado público',
+  banquetas:         'Banquetas',
+  tipo_calles:       'Tipo de calles',
+  telefono_internet: 'Teléfono / Internet',
+};
+
 interface Props {
   avaluo: {
     id: string;
@@ -34,6 +91,7 @@ interface Props {
     fecha_firma_valuador: string | null;
     pdf_oficial_path: string | null;
     valuador: { nombre: string; apellidos: string | null } | null;
+    verificacion_servicios: VerificacionServicios | null;
   };
   contadoresFotos: {
     fachada: number;
@@ -61,12 +119,40 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
   const [fechaVisita, setFechaVisita] = useState('');
 
   // Estado de las fotos (solo se usa en estado agenda_visita)
+  // Requerimiento: 1 fachada + 2 entorno + 5 a 8 interior (rango).
+  // Arrancamos con 5 slots de interior; el valuador puede agregar hasta 8.
+  const MIN_INTERIOR = 5;
+  const MAX_INTERIOR = 8;
   const [fachada, setFachada] = useState<File | null>(null);
   const [entornos, setEntornos] = useState<(File | null)[]>([null, null]);
-  const [interiores, setInteriores] = useState<(File | null)[]>([null, null, null, null, null, null, null, null]);
+  const [interiores, setInteriores] = useState<(File | null)[]>(
+    Array(MIN_INTERIOR).fill(null),
+  );
   const fachadaRef = useRef<HTMLInputElement>(null);
   const entornoRefs = useRef<(HTMLInputElement | null)[]>([]);
   const interiorRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Verificación de servicios (Fase 3)
+  const [servicios, setServicios] = useState<VerificacionServicios>(
+    avaluo.verificacion_servicios ?? {},
+  );
+  const actualizarServicio = <K extends keyof VerificacionServicios>(
+    k: K,
+    v: VerificacionServicios[K],
+  ) => setServicios((prev) => ({ ...prev, [k]: v }));
+
+  const serviciosCompletos = (Object.keys(OPCIONES_SERVICIOS) as Array<keyof VerificacionServicios>)
+    .every((k) => !!servicios[k]);
+
+  const agregarSlotInterior = () => {
+    setInteriores((prev) => (prev.length < MAX_INTERIOR ? [...prev, null] : prev));
+  };
+  const quitarSlotInterior = (i: number) => {
+    setInteriores((prev) => {
+      if (prev.length <= MIN_INTERIOR) return prev;
+      return prev.filter((_, idx) => idx !== i);
+    });
+  };
 
   // Estado del ajuste de valor (preavaluo)
   // Inicializamos con el valor UV para que el valuador acepte por defecto
@@ -83,8 +169,16 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
     setTimeout(() => setToast(null), 5000);
   };
 
-  const totalFotos = (fachada ? 1 : 0) + entornos.filter(Boolean).length + interiores.filter(Boolean).length;
-  const fotosCompletas = !!fachada && entornos.every(Boolean) && interiores.every(Boolean);
+  const interioresLlenos = interiores.filter(Boolean).length;
+  const totalFotos = (fachada ? 1 : 0) + entornos.filter(Boolean).length + interioresLlenos;
+  // Válido si: 1 fachada + 2 entornos + entre 5 y 8 interiores,
+  // y que todos los slots visibles estén llenos (no slots vacíos en medio).
+  const fotosCompletas =
+    !!fachada &&
+    entornos.every(Boolean) &&
+    interioresLlenos >= MIN_INTERIOR &&
+    interioresLlenos <= MAX_INTERIOR &&
+    interiores.every(Boolean);
 
   const estadoCfg = ESTADO_LABELS[avaluo.estado] || ESTADO_LABELS.solicitud;
   const direccionCompleta = `${avaluo.calle}${avaluo.colonia ? ', ' + avaluo.colonia : ''}, ${avaluo.municipio}, ${avaluo.estado_inmueble}`;
@@ -103,7 +197,11 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
 
   const handleSubirFotos = () => {
     if (!fotosCompletas) {
-      mostrarToast('error', 'Faltan fotos: necesitas 1 fachada, 2 entorno y 8 interior.');
+      mostrarToast('error', `Faltan fotos: 1 fachada, 2 entorno y entre ${MIN_INTERIOR} y ${MAX_INTERIOR} interior (llena todos los slots visibles).`);
+      return;
+    }
+    if (!serviciosCompletos) {
+      mostrarToast('error', 'Llena los 6 campos de verificación de servicios antes de registrar la visita.');
       return;
     }
     startTransition(async () => {
@@ -112,6 +210,8 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
       if (fachada) fd.append('fachada', fachada);
       entornos.forEach((f) => f && fd.append('entorno', f));
       interiores.forEach((f) => f && fd.append('interior', f));
+      // Servicios como JSON string — el server los parsea y guarda en columna jsonb
+      fd.append('servicios', JSON.stringify(servicios));
 
       const res = await subirFotosVisitaAction(fd);
       mostrarToast(res.exito ? 'exito' : 'error', res.mensaje);
@@ -249,7 +349,7 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
             </p>
             <h2 className="text-lg font-black text-slate-900">Agendar visita al inmueble</h2>
             <p className="text-xs text-slate-500 mt-1">
-              Documentación validada. Programa la visita física al inmueble para tomar las 11 fotografías requeridas.
+              Documentación validada. Programa la visita física al inmueble para tomar las fotografías requeridas (1 fachada, 2 entorno y entre {MIN_INTERIOR} y {MAX_INTERIOR} interior).
             </p>
           </div>
 
@@ -282,10 +382,10 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
             <p className="text-[10px] font-bold text-purple-600 uppercase tracking-widest mb-1">
               SIGUIENTE PASO
             </p>
-            <h2 className="text-lg font-black text-slate-900">Subir las 11 fotografías de la visita</h2>
+            <h2 className="text-lg font-black text-slate-900">Subir las fotografías de la visita</h2>
             <p className="text-xs text-slate-500 mt-1">
-              Se requiere exactamente: <strong>1 fachada</strong>, <strong>2 entorno</strong> y <strong>8 interior</strong>.
-              Total: 11 fotos.
+              Se requiere: <strong>1 fachada</strong>, <strong>2 entorno</strong> y{' '}
+              <strong>{MIN_INTERIOR} a {MAX_INTERIOR} interior</strong>. Total: {2 + 1 + MIN_INTERIOR} a {2 + 1 + MAX_INTERIOR} fotos.
             </p>
           </div>
 
@@ -333,14 +433,25 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
             </div>
           </div>
 
-          {/* Interior */}
+          {/* Interior — rango dinámico 5..8 */}
           <div className="space-y-2">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-              Interior (8) — {interiores.filter(Boolean).length}/8
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                Interior ({MIN_INTERIOR}–{MAX_INTERIOR}) — {interioresLlenos}/{interiores.length}
+              </p>
+              {interiores.length < MAX_INTERIOR && (
+                <button
+                  type="button"
+                  onClick={agregarSlotInterior}
+                  className="text-[10px] font-bold text-blue-600 border border-blue-200 hover:bg-blue-50 rounded-lg px-2.5 py-1 transition"
+                >
+                  + Agregar slot
+                </button>
+              )}
+            </div>
             <div className="grid grid-cols-4 gap-2">
-              {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
-                <div key={i}>
+              {interiores.map((_, i) => (
+                <div key={i} className="relative group">
                   <input
                     ref={(el) => { interiorRefs.current[i] = el; }}
                     type="file"
@@ -354,6 +465,48 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
                     etiqueta={`Interior ${i + 1}`}
                     pequeño
                   />
+                  {/* Botón quitar (solo visible si hay más del mínimo) */}
+                  {interiores.length > MIN_INTERIOR && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); quitarSlotInterior(i); }}
+                      className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-white border border-slate-300 hover:border-red-400 hover:text-red-500 text-slate-400 rounded-full flex items-center justify-center text-[10px] font-black shadow-sm opacity-0 group-hover:opacity-100 transition"
+                      aria-label={`Quitar Interior ${i + 1}`}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Verificación de servicios — 6 dropdowns */}
+          <div className="pt-4 border-t border-slate-100 space-y-3">
+            <div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                Verificación de servicios
+              </p>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                Llena los 6 campos sobre los servicios disponibles en la zona del inmueble.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {(Object.keys(OPCIONES_SERVICIOS) as Array<keyof VerificacionServicios>).map((k) => (
+                <div key={k} className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {LABELS_SERVICIOS[k]}
+                  </label>
+                  <select
+                    value={servicios[k] ?? ''}
+                    onChange={(e) => actualizarServicio(k, e.target.value || undefined)}
+                    className="w-full text-xs font-semibold text-slate-800 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  >
+                    <option value="">— Seleccionar —</option>
+                    {OPCIONES_SERVICIOS[k].map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
                 </div>
               ))}
             </div>
@@ -364,20 +517,22 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
             <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
               <div
                 className="h-full bg-[#0F172A] rounded-full transition-all duration-500"
-                style={{ width: `${(totalFotos / 11) * 100}%` }}
+                style={{ width: `${(totalFotos / (1 + 2 + interiores.length)) * 100}%` }}
               />
             </div>
             <button
               type="button"
               onClick={handleSubirFotos}
-              disabled={pending || !fotosCompletas}
+              disabled={pending || !fotosCompletas || !serviciosCompletos}
               className="w-full bg-[#0F172A] hover:bg-slate-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 tracking-wider"
             >
               {pending
                 ? 'SUBIENDO…'
-                : fotosCompletas
-                ? 'MARCAR VISITA REALIZADA Y SUBIR FOTOS'
-                : `FALTAN ${11 - totalFotos} FOTO(S)`}
+                : !fotosCompletas
+                ? `FALTAN ${Math.max((1 + 2 + interiores.length) - totalFotos, 0)} FOTO(S)`
+                : !serviciosCompletos
+                ? 'COMPLETA LA VERIFICACIÓN DE SERVICIOS'
+                : 'MARCAR VISITA REALIZADA Y SUBIR FOTOS'}
             </button>
           </div>
         </section>
@@ -398,7 +553,7 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
           <div className="grid grid-cols-3 gap-2 pt-2">
             <DotCount label="Fachada" count={contadoresFotos.fachada} esperado={1} />
             <DotCount label="Entorno" count={contadoresFotos.entorno} esperado={2} />
-            <DotCount label="Interior" count={contadoresFotos.interior} esperado={8} />
+            <DotCount label="Interior" count={contadoresFotos.interior} esperado={`${MIN_INTERIOR}-${MAX_INTERIOR}`} />
           </div>
         </section>
       )}
@@ -648,8 +803,15 @@ function SlotFoto({
   );
 }
 
-function DotCount({ label, count, esperado }: { label: string; count: number; esperado: number }) {
-  const ok = count >= esperado;
+function DotCount({ label, count, esperado }: { label: string; count: number; esperado: number | string }) {
+  // `esperado` puede ser número (mínimo) o string tipo "5-8" (rango min-max).
+  let ok: boolean;
+  if (typeof esperado === 'number') {
+    ok = count >= esperado;
+  } else {
+    const [min, max] = esperado.split('-').map((n) => parseInt(n, 10));
+    ok = count >= (min ?? 0) && count <= (max ?? Infinity);
+  }
   return (
     <div className={`rounded-lg border px-3 py-2 ${ok ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'}`}>
       <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{label}</p>
