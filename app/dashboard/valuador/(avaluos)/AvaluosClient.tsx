@@ -449,6 +449,8 @@ export default function AvaluosClient() {
       if (data.valido) {
         if (data.datos_consolidados.valor_estimado) setValorBase(data.datos_consolidados.valor_estimado);
         if (data.datos_consolidados.observaciones) setNotasRiesgo(data.datos_consolidados.observaciones);
+        // IA válida → auto-guardar inmediatamente (genera folio + mueve PDFs)
+        await ejecutarGuardado(data, subidos, false);
       }
     } catch (err) {
       const mensaje = err instanceof Error
@@ -460,16 +462,19 @@ export default function AvaluosClient() {
     }
   };
 
-  const handleGuardar = async () => {
-    if (!validacionAprobada || !tipoAvaluo || !resultado) return;
+  // ─── Lógica de guardado (reutilizada por auto-save y override manual) ───
+  const ejecutarGuardado = async (
+    resultadoIA: ResultadoAnalisis,
+    archivosTemp: typeof tempStoragePaths,
+    esOverride: boolean,
+  ) => {
     setGuardando(true);
     setGuardadoResult(null);
 
-    const datos = resultado.datos_consolidados;
+    const datos = resultadoIA.datos_consolidados;
     const ubicacionRaw = datos.ubicacion || '';
     const partesDir = ubicacionRaw.split(',').map((p: string) => p.trim());
 
-    // Resolver uso de suelo según geofence
     let usoSueloPayload: string | null = null;
     let usoSueloAuto = false;
     if (inmuebleEnQro && usoSueloSeleccionado) {
@@ -495,9 +500,8 @@ export default function AvaluosClient() {
       clave_catastral: datos.clave_catastral || undefined,
       superficie_terreno: datos.superficie ? Number(datos.superficie.replace(/[^0-9.]/g, '')) : undefined,
       notas: [
-        // Si fue override manual, dejarlo PRIMERO y bien visible para el controlador
-        validacionManual
-          ? `[VALIDACIÓN MANUAL DEL VALUADOR — IA bloqueó el expediente]\nMotivo: ${motivoOverride.trim()}\nErrores que reportó la IA:\n${(resultado?.errores_bloqueantes ?? []).map((e) => `  • ${e}`).join('\n')}`
+        esOverride
+          ? `[VALIDACIÓN MANUAL DEL VALUADOR — IA bloqueó el expediente]\nMotivo: ${motivoOverride.trim()}\nErrores que reportó la IA:\n${(resultadoIA?.errores_bloqueantes ?? []).map((e) => `  • ${e}`).join('\n')}`
           : null,
         notasRiesgo || null,
         datos.observaciones || null,
@@ -509,18 +513,8 @@ export default function AvaluosClient() {
       uso_suelo_auto: usoSueloAuto,
     };
 
-    // ───────────────────────────────────────────────────────
-    // FLUJO DE GUARDADO
-    //
-    // Los archivos ya están en Supabase Storage (subidos en el análisis de IA
-    // a rutas temp/). Ahora:
-    // 1. Crear avalúo vacío → recibe { id, folio }
-    // 2. Mover archivos de temp/ a avaluos/{id}/ (copy + delete)
-    // 3. Si hay uso de suelo extra, subirlo aparte
-    // 4. Registrar documentos en la tabla
-    // ───────────────────────────────────────────────────────
     try {
-      // PASO 1 — crear avalúo vacío
+      // PASO 1 — crear avalúo vacío → folio
       const resCrear = await crearAvaluoVacioAction(payload);
       if (!resCrear.exito || !resCrear.avaluo_id) {
         setGuardadoResult({ exito: false, error: resCrear.error || 'No se pudo crear el avalúo.' });
@@ -535,21 +529,19 @@ export default function AvaluosClient() {
       // PASO 2 — mover archivos de temp/ a avaluos/{id}/
       const subidosOk: { docId: string; docNombre: string; storagePath: string; contentType: string; tamanio: number; categoria?: 'uso_suelo' }[] = [];
 
-      for (const temp of tempStoragePaths) {
+      for (const temp of archivosTemp) {
         const ext = (temp.storagePath.split('.').pop() || '').toLowerCase();
         const finalPath = `avaluos/${avaluoId}/${temp.docId}-${Date.now()}.${ext}`;
 
-        // Copy from temp to final path
         const { error: errCopy } = await supabase.storage
           .from('documentos')
           .copy(temp.storagePath, finalPath);
 
         if (errCopy) {
-          erroresUpload.push(`${temp.docNombre}: error al mover archivo: ${errCopy.message}`);
+          erroresUpload.push(`${temp.docNombre}: error al mover: ${errCopy.message}`);
           continue;
         }
 
-        // Delete temp file (best-effort, don't fail if this errors)
         await supabase.storage.from('documentos').remove([temp.storagePath]);
 
         subidosOk.push({
@@ -561,7 +553,7 @@ export default function AvaluosClient() {
         });
       }
 
-      // PASO 2b — subir uso de suelo si aplica (no pasó por la IA)
+      // Subir uso de suelo si aplica
       if (!inmuebleEnQro && usoSueloFile) {
         const ext = (usoSueloFile.name.split('.').pop() || '').toLowerCase();
         const contentType = usoSueloFile.type || 'application/octet-stream';
@@ -583,7 +575,7 @@ export default function AvaluosClient() {
         }
       }
 
-      // PASO 3 — registrar los subidos en la tabla documentos
+      // PASO 3 — registrar docs en tabla
       if (subidosOk.length > 0) {
         const resRegistro = await registrarDocumentosAction(avaluoId, subidosOk);
         if (!resRegistro.exito) {
@@ -591,7 +583,6 @@ export default function AvaluosClient() {
         }
       }
 
-      // Reportar resultado al UI
       if (erroresUpload.length > 0) {
         setGuardadoResult({
           exito: true,
@@ -600,22 +591,21 @@ export default function AvaluosClient() {
           error: `Avalúo guardado (${folio}), pero algunos archivos fallaron:\n${erroresUpload.join('\n')}`,
         });
       } else {
-        setGuardadoResult({
-          exito: true,
-          avaluo_id: avaluoId,
-          folio,
-        });
+        setGuardadoResult({ exito: true, avaluo_id: avaluoId, folio });
       }
     } catch (err) {
-      console.error('handleGuardar — error inesperado:', err);
+      console.error('ejecutarGuardado — error:', err);
       const mensaje = err instanceof Error ? err.message : 'Error desconocido al guardar.';
-      setGuardadoResult({
-        exito: false,
-        error: `No se pudo guardar el avalúo: ${mensaje}`,
-      });
+      setGuardadoResult({ exito: false, error: `No se pudo guardar: ${mensaje}` });
     } finally {
       setGuardando(false);
     }
+  };
+
+  // handleGuardar: solo se usa para el override manual (IA bloqueó pero valuador fuerza)
+  const handleGuardar = async () => {
+    if (!validacionManual || !tipoAvaluo || !resultado) return;
+    await ejecutarGuardado(resultado, tempStoragePaths, true);
   };
 
   const limpiarTodo = () => {
@@ -1401,33 +1391,37 @@ export default function AvaluosClient() {
                   </div>
                 )}
 
-                {/* Botón guardar */}
-                <button
-                  onClick={handleGuardar}
-                  disabled={Boolean(!validacionAprobada || guardando || guardadoResult?.exito === true || !usoSueloListo)}
-                  className={`w-full disabled:bg-slate-200 disabled:text-slate-400 text-white font-black text-xs py-4 rounded-2xl transition flex items-center justify-center gap-2 tracking-widest shadow-lg ${
-                    validacionManual
-                      ? 'bg-red-600 hover:bg-red-700 shadow-red-300/50 border-2 border-red-700'
-                      : 'bg-[#0F172A] hover:bg-slate-700 shadow-slate-900/20'
-                  }`}
-                >
-                  {guardando ? (
-                    <>
-                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
-                      GUARDANDO...
-                    </>
-                  ) : guardadoResult?.exito ? (
-                    '✓ GUARDADO'
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
-                      {validacionManual ? '⚠ GUARDAR CON OVERRIDE' : 'GUARDAR VALUACIÓN'}
-                    </>
-                  )}
-                </button>
+                {/* Botón guardar: solo visible para override manual o durante guardado automático */}
+                {(guardando || guardadoResult || validacionManual) && (
+                  <button
+                    onClick={handleGuardar}
+                    disabled={Boolean(!validacionManual || guardando || guardadoResult?.exito === true)}
+                    className={`w-full disabled:bg-slate-200 disabled:text-slate-400 text-white font-black text-xs py-4 rounded-2xl transition flex items-center justify-center gap-2 tracking-widest shadow-lg ${
+                      validacionManual && !guardadoResult?.exito
+                        ? 'bg-red-600 hover:bg-red-700 shadow-red-300/50 border-2 border-red-700'
+                        : guardadoResult?.exito
+                        ? 'bg-green-600'
+                        : 'bg-[#0F172A] hover:bg-slate-700 shadow-slate-900/20'
+                    }`}
+                  >
+                    {guardando ? (
+                      <>
+                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        GUARDANDO...
+                      </>
+                    ) : guardadoResult?.exito ? (
+                      `FOLIO ${guardadoResult.folio ?? ''} GUARDADO`
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
+                        GUARDAR CON OVERRIDE
+                      </>
+                    )}
+                  </button>
+                )}
 
                 {/* Última edición */}
                 <p className="text-[9px] text-slate-400 text-center font-semibold uppercase tracking-widest">
