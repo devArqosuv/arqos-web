@@ -29,7 +29,12 @@
       "Bash(rm -f /Users/paolaguemez/Desktop/arqos/arqos-web/.git/index.lock)",
       "Bash(git push:*)",
       "Bash(gh auth:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(ls -la /Users/paolaguemez/Desktop/arqos/arqos-web/docs*)",
+      "Bash(find /Users/paolaguemez/Desktop/arqos/arqos-web/app -name \"route.ts\" -exec grep -l \"datos_consolidados\\\\|auto.*fill\\\\|autofill\" {} \\\\;)",
+      "Bash(grep -h \"from \" app/components/sections/*.tsx app/components/layout/*.tsx app/components/ui/*.tsx app/components/arqos-data/*.tsx)",
+      "Bash(npm install:*)",
+      "Bash(rm -f .git/index.lock)"
     ]
   }
 }
