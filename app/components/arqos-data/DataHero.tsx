@@ -18,19 +18,20 @@ export function DataHero() {
         {/* Badge */}
         <span className="inline-flex items-center gap-2 rounded-full border border-arqos-black/15 bg-arqos-white/60 px-4 py-1.5 font-body text-[11px] uppercase tracking-[0.2em] text-arqos-gray-700 backdrop-blur-sm">
           <Sparkles className="h-3.5 w-3.5" />
-          Preview · Próximamente
+          Inteligencia Artificial
         </span>
 
         {/* Title */}
         <h1 className="mt-8 font-display text-5xl font-bold leading-[1.05] tracking-tight text-arqos-black md:text-7xl">
-          ARQOS <span className="italic text-arqos-gray-600">Data</span>
+          Conoce el <span className="italic text-arqos-gray-600">valor</span>
+          <br />de tu propiedad
         </h1>
 
         {/* Subtitle */}
         <p className="mt-6 max-w-2xl font-body text-lg leading-relaxed text-arqos-gray-600 md:text-xl">
-          Valuación estimada de tu propiedad en minutos. Nuestro asistente de
-          inteligencia artificial te hace las preguntas correctas y entrega un
-          rango de valor orientativo, basado en datos de mercado.
+          Estimación de valor impulsada por inteligencia artificial.
+          Ingresa los datos de tu inmueble y obtén un rango de valor en segundos,
+          basado en datos de mercado actualizados.
         </p>
 
         {/* Divider */}
@@ -41,18 +42,18 @@ export function DataHero() {
           {[
             {
               step: "01",
-              title: "Responde",
-              body: "Contesta una breve conversación sobre tu inmueble.",
+              title: "Describe",
+              body: "Ingresa la dirección, tipo de inmueble y superficie de tu propiedad.",
             },
             {
               step: "02",
-              title: "Analiza",
-              body: "Nuestra IA cruza la información con datos de mercado.",
+              title: "Estima",
+              body: "Nuestra IA analiza el mercado y genera un rango de valor al instante.",
             },
             {
               step: "03",
-              title: "Conecta",
-              body: "Opcionalmente, solicita un avalúo oficial con un valuador certificado.",
+              title: "Refina",
+              body: "Platica con la IA para afinar el estimado con detalles de acabados y zona.",
             },
           ].map((item) => (
             <div

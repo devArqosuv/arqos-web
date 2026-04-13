@@ -1,24 +1,14 @@
 import type { Metadata } from "next";
 import { DataHero } from "@/app/components/arqos-data/DataHero";
-import { DataChat } from "@/app/components/arqos-data/DataChat";
+import { ArqosDataClient } from "./ArqosDataClient";
 
 export const metadata: Metadata = {
-  title: "ARQOS Data (Preview)",
+  title: "ARQOS Data — Estimación de Valor con IA",
   description:
-    "Interfaz en construcción del asistente de valuación ARQOS Data. Acceso interno, no destinado al público.",
-  // Página no pública: ocultamos de buscadores y motores de IA.
+    "Conoce el valor estimado de tu propiedad en segundos. Inteligencia artificial aplicada a la valuación inmobiliaria en México.",
   robots: {
     index: false,
     follow: false,
-    nocache: true,
-    googleBot: {
-      index: false,
-      follow: false,
-      noimageindex: true,
-      "max-snippet": -1,
-      "max-image-preview": "none",
-      "max-video-preview": -1,
-    },
   },
 };
 
@@ -26,7 +16,7 @@ export default function ArqosDataPage() {
   return (
     <>
       <DataHero />
-      <DataChat />
+      <ArqosDataClient />
     </>
   );
 }
