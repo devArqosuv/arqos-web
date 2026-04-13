@@ -1,15 +1,35 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc:*)",
-      "Bash(npm install:*)",
+      "Bash(\"/c/Program Files/nodejs/npx.cmd\" pnpm:*)",
+      "Bash(mkdir:*)",
+      "Bash(pkill:*)",
+      "Bash(node:*)",
+      "Bash(mv:*)",
+      "Bash(git fetch:*)",
+      "Bash(git checkout:*)",
+      "Bash(git stash:*)",
+      "Bash(grep -h \"ALTER TABLE\\\\|FROM\\\\|INSERT INTO\\\\|UPDATE\" /Users/paolaguemez/Desktop/arqos/arqos-web/supabase/migrations/*.sql)",
+      "Bash(xargs -I {} git show {}:supabase/migrations/00_schema.sql)",
+      "Bash(git tag:*)",
+      "Bash(npm run:*)",
+      "Bash(curl -s https://oeoopbqndgnxrlldyzeu.supabase.co/rest/v1/rpc -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lb29wYnFuZGdueHJsbGR5emV1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEwNjg2OSwiZXhwIjoyMDkwNjgyODY5fQ.93oo8JHLU4Kp_04Lu2tN9pePEn4_zjiL81nIeRWCGgY' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9lb29wYnFuZGdueHJsbGR5emV1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTEwNjg2OSwiZXhwIjoyMDkwNjgyODY5fQ.93oo8JHLU4Kp_04Lu2tN9pePEn4_zjiL81nIeRWCGgY')",
+      "Bash(grep -B5 -A 20 \"documentos.*SELECT\\\\|SELECT.*documentos\\\\|POLICY.*documentos\" /Users/paolaguemez/Desktop/arqos/arqos-web/supabase/migrations/*.sql)",
+      "Bash(grep -l \"CREATE TABLE documentos\" /Users/paolaguemez/Desktop/arqos/arqos-web/supabase/migrations/*.sql)",
+      "Bash(find /Users/paolaguemez/Desktop/arqos/arqos-web/supabase -name \"*.sql\" -exec grep -l \"documentos\" {} \\\\;)",
+      "Bash(wc -l /Users/paolaguemez/Desktop/arqos/arqos-web/app/dashboard/controlador/expedientes/[id]/ControladorAvaluoClient.tsx)",
+      "Bash(tmux new-session:*)",
+      "Bash(tmux capture-pane:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/login)",
+      "Bash(ls -la ~/Downloads/ARQOS_Avaluos_*.xlsx)",
+      "Bash(git -C /Users/paolaguemez/Desktop/arqos/arqos-web log --oneline)",
+      "WebSearch",
       "Bash(git add:*)",
       "Bash(git commit -m ':*)",
+      "Bash(rm -f /Users/paolaguemez/Desktop/arqos/arqos-web/.git/index.lock)",
       "Bash(git push:*)",
-      "Bash(npm ls:*)",
-      "Bash(git mv:*)",
-      "Bash(grep -l \"fn_crear_perfil_usuario\\\\|on_auth_user_created\\\\|perfiles\" supabase/migrations/*.sql)",
-      "Bash(grep -l \"workflow_transicion\\\\|fn_cambiar_estado_avaluo\" supabase/migrations/*.sql)"
+      "Bash(gh auth:*)",
+      "Bash(gh api:*)"
     ]
   }
 }
