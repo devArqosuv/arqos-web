@@ -25,8 +25,8 @@ export interface AvaluoPdfData {
   valor_final: number;
   moneda: string;
   // Firmas
-  firma_uv: { nombre: string; fecha: string } | null;
-  firma_valuador: { nombre: string; fecha: string } | null;
+  firma_uv: { nombre: string; fecha: string; imagenUrl?: string | null } | null;
+  firma_valuador: { nombre: string; fecha: string; imagenUrl?: string | null } | null;
   // Comparables
   comparables: {
     municipio: string;
@@ -454,6 +454,9 @@ export function AvaluoPdfDocument({ data }: { data: AvaluoPdfData }) {
         {/* Firmas */}
         <View style={styles.firmasContainer}>
           <View style={styles.firmaBox}>
+            {data.firma_uv?.imagenUrl && (
+              <Image src={data.firma_uv.imagenUrl} style={{ height: 40, objectFit: 'contain', marginBottom: 4 }} />
+            )}
             <Text style={styles.firmaNombre}>{data.firma_uv?.nombre || '—'}</Text>
             <Text style={styles.firmaRol}>UNIDAD DE VALUACIÓN (CONTROLADOR)</Text>
             <Text style={styles.firmaFecha}>
@@ -461,6 +464,9 @@ export function AvaluoPdfDocument({ data }: { data: AvaluoPdfData }) {
             </Text>
           </View>
           <View style={styles.firmaBox}>
+            {data.firma_valuador?.imagenUrl && (
+              <Image src={data.firma_valuador.imagenUrl} style={{ height: 40, objectFit: 'contain', marginBottom: 4 }} />
+            )}
             <Text style={styles.firmaNombre}>{data.firma_valuador?.nombre || '—'}</Text>
             <Text style={styles.firmaRol}>VALUADOR ASIGNADO</Text>
             <Text style={styles.firmaFecha}>

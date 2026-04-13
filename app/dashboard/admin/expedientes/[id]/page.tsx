@@ -41,13 +41,24 @@ export default async function AdminAvaluoDetailPage({
     .eq('avaluo_id', id)
     .order('created_at', { ascending: false });
 
-  const { data: docsCategoria } = await supabase
+  // Cargar documentos completos con signed URLs
+  const { data: documentosRaw } = await supabase
     .from('documentos')
-    .select('categoria')
-    .eq('avaluo_id', id);
+    .select('id, nombre, categoria, storage_path, tipo_mime, tamanio_bytes, created_at')
+    .eq('avaluo_id', id)
+    .order('created_at', { ascending: true });
+
+  const documentos = await Promise.all(
+    (documentosRaw ?? []).map(async (doc) => {
+      const { data } = await supabase.storage
+        .from('documentos')
+        .createSignedUrl(doc.storage_path, 3600);
+      return { ...doc, url: data?.signedUrl ?? null };
+    })
+  );
 
   const contadores = { fachada: 0, entorno: 0, interior: 0, documento: 0 };
-  (docsCategoria ?? []).forEach((d: { categoria: string | null }) => {
+  documentos.forEach((d) => {
     if (d.categoria === 'fachada') contadores.fachada++;
     else if (d.categoria === 'entorno') contadores.entorno++;
     else if (d.categoria === 'interior') contadores.interior++;
@@ -66,6 +77,7 @@ export default async function AdminAvaluoDetailPage({
           </Link>
         </div>
         <ControladorAvaluoClient
+          documentos={documentos}
           avaluo={{
             id: avaluo.id,
             folio: avaluo.folio,

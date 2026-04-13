@@ -222,6 +222,16 @@ export async function firmarValuadorAction(avaluoId: string): Promise<Resultado>
 
     const valorFinal = Number(avaluo.valor_valuador ?? avaluo.valor_uv ?? 0);
 
+    // Obtener imágenes de firma de controlador y valuador
+    const [firmaControladorData, firmaValuadorData] = await Promise.all([
+      avaluo.controlador_id
+        ? supabase.from('perfiles').select('firma_imagen_url').eq('id', avaluo.controlador_id).single()
+        : Promise.resolve({ data: null }),
+      supabase.from('perfiles').select('firma_imagen_url').eq('id', avaluo.valuador_id).single(),
+    ]);
+    const firmaUvImagenUrl = await firmarPath(firmaControladorData.data?.firma_imagen_url ?? null);
+    const firmaValuadorImagenUrl = await firmarPath(firmaValuadorData.data?.firma_imagen_url ?? null);
+
     // Construir data del PDF
     const pdfData: AvaluoPdfData = {
       folio: avaluo.folio,
@@ -243,9 +253,9 @@ export async function firmarValuadorAction(avaluoId: string): Promise<Resultado>
       valor_final: valorFinal,
       moneda: avaluo.moneda ?? 'MXN',
       firma_uv: avaluo.fecha_firma_uv
-        ? { nombre: nombreControlador, fecha: avaluo.fecha_firma_uv }
+        ? { nombre: nombreControlador, fecha: avaluo.fecha_firma_uv, imagenUrl: firmaUvImagenUrl }
         : null,
-      firma_valuador: { nombre: nombreValuador, fecha: ahora },
+      firma_valuador: { nombre: nombreValuador, fecha: ahora, imagenUrl: firmaValuadorImagenUrl },
       comparables: (comparables ?? []).map((c) => ({
         municipio: c.municipio,
         estado_inmueble: c.estado_inmueble,

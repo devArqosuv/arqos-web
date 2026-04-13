@@ -44,14 +44,25 @@ export default async function AvaluoDetailPage({
   const valuadorRaw = (avaluoRaw as { valuador: unknown }).valuador;
   const valuador = Array.isArray(valuadorRaw) ? valuadorRaw[0] ?? null : (valuadorRaw as { nombre: string; apellidos: string | null } | null);
 
-  // Contar fotos por categoría (para el resumen del estado visita_realizada)
-  const { data: docsCategoria } = await supabase
+  // Cargar documentos completos con signed URLs
+  const { data: documentosRaw } = await supabase
     .from('documentos')
-    .select('categoria')
-    .eq('avaluo_id', id);
+    .select('id, nombre, categoria, storage_path, tipo_mime, tamanio_bytes, created_at')
+    .eq('avaluo_id', id)
+    .order('created_at', { ascending: true });
 
+  const documentos = await Promise.all(
+    (documentosRaw ?? []).map(async (doc) => {
+      const { data } = await supabase.storage
+        .from('documentos')
+        .createSignedUrl(doc.storage_path, 3600);
+      return { ...doc, url: data?.signedUrl ?? null };
+    })
+  );
+
+  // Contar fotos por categoría (para el resumen del estado visita_realizada)
   const contadores = { fachada: 0, portada: 0, entorno: 0, interior: 0 };
-  (docsCategoria ?? []).forEach((d: { categoria: string | null }) => {
+  documentos.forEach((d) => {
     if (d.categoria === 'fachada') contadores.fachada++;
     else if (d.categoria === 'portada') contadores.portada++;
     else if (d.categoria === 'entorno') contadores.entorno++;
@@ -71,6 +82,7 @@ export default async function AvaluoDetailPage({
             </Link>
           </div>
           <AvaluoDetailClient
+            documentos={documentos}
             avaluo={{
               id: avaluoRaw.id,
               folio: avaluoRaw.folio,

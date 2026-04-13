@@ -69,8 +69,22 @@ interface ResultadoAnalisis {
   datos_consolidados: {
     propietario: string | null;
     ubicacion: string | null;
+    calle: string | null;
+    colonia: string | null;
+    municipio: string | null;
+    estado: string | null;
+    cp: string | null;
     clave_catastral: string | null;
-    superficie: string | null;
+    cuenta_predial: string | null;
+    superficie_terreno: string | null;
+    superficie_construccion: string | null;
+    superficie: string | null; // legacy fallback
+    regimen_propiedad: string | null;
+    numero_escritura: string | null;
+    notario: string | null;
+    fecha_escritura: string | null;
+    rpp_folio: string | null;
+    valor_catastral: string | null;
     valor_estimado: string | null;
     observaciones: string | null;
   };
@@ -211,7 +225,8 @@ export default function AvaluosClient() {
   // - Sí → mostramos dropdown del catálogo `usos_suelo_qro`
   // - No → mostramos input para subir imagen de uso de suelo
   const ubicacionDetectada = resultado?.datos_consolidados?.ubicacion ?? null;
-  const inmuebleEnQro = esEnQueretaro(ubicacionDetectada);
+  const estadoDetectado = resultado?.datos_consolidados?.estado ?? null;
+  const inmuebleEnQro = esEnQueretaro(estadoDetectado) || esEnQueretaro(ubicacionDetectada);
 
   // Validación efectiva: pasa la IA o el valuador hizo override manual.
   // Esta es la única flag que las demás partes del UI deben consultar.
@@ -340,12 +355,12 @@ export default function AvaluosClient() {
       errores_bloqueantes: [mensaje],
       documentos: [],
       datos_consolidados: {
-        propietario: null,
-        ubicacion: null,
-        clave_catastral: null,
-        superficie: null,
-        valor_estimado: null,
-        observaciones: null,
+        propietario: null, ubicacion: null, calle: null, colonia: null,
+        municipio: null, estado: null, cp: null, clave_catastral: null,
+        cuenta_predial: null, superficie_terreno: null, superficie_construccion: null,
+        superficie: null, regimen_propiedad: null, numero_escritura: null,
+        notario: null, fecha_escritura: null, rpp_folio: null,
+        valor_catastral: null, valor_estimado: null, observaciones: null,
       },
     });
 
@@ -437,12 +452,26 @@ export default function AvaluosClient() {
           : (r?.error ? [String(r.error)] : ['La IA devolvió una respuesta inválida (sin errores_bloqueantes).']),
         documentos: Array.isArray(r?.documentos) ? r.documentos : [],
         datos_consolidados: {
-          propietario:     r?.datos_consolidados?.propietario     ?? null,
-          ubicacion:       r?.datos_consolidados?.ubicacion       ?? null,
-          clave_catastral: r?.datos_consolidados?.clave_catastral ?? null,
-          superficie:      r?.datos_consolidados?.superficie      ?? null,
-          valor_estimado:  r?.datos_consolidados?.valor_estimado  ?? null,
-          observaciones:   r?.datos_consolidados?.observaciones   ?? null,
+          propietario:             r?.datos_consolidados?.propietario             ?? null,
+          ubicacion:               r?.datos_consolidados?.ubicacion               ?? null,
+          calle:                   r?.datos_consolidados?.calle                   ?? null,
+          colonia:                 r?.datos_consolidados?.colonia                 ?? null,
+          municipio:               r?.datos_consolidados?.municipio               ?? null,
+          estado:                  r?.datos_consolidados?.estado                  ?? null,
+          cp:                      r?.datos_consolidados?.cp                      ?? null,
+          clave_catastral:         r?.datos_consolidados?.clave_catastral         ?? null,
+          cuenta_predial:          r?.datos_consolidados?.cuenta_predial          ?? null,
+          superficie_terreno:      r?.datos_consolidados?.superficie_terreno      ?? null,
+          superficie_construccion: r?.datos_consolidados?.superficie_construccion ?? null,
+          superficie:              r?.datos_consolidados?.superficie              ?? r?.datos_consolidados?.superficie_terreno ?? null,
+          regimen_propiedad:       r?.datos_consolidados?.regimen_propiedad       ?? null,
+          numero_escritura:        r?.datos_consolidados?.numero_escritura        ?? null,
+          notario:                 r?.datos_consolidados?.notario                 ?? null,
+          fecha_escritura:         r?.datos_consolidados?.fecha_escritura         ?? null,
+          rpp_folio:               r?.datos_consolidados?.rpp_folio               ?? null,
+          valor_catastral:         r?.datos_consolidados?.valor_catastral         ?? null,
+          valor_estimado:          r?.datos_consolidados?.valor_estimado          ?? null,
+          observaciones:           r?.datos_consolidados?.observaciones           ?? null,
         },
       };
       setResultado(data);
@@ -472,8 +501,22 @@ export default function AvaluosClient() {
     setGuardadoResult(null);
 
     const datos = resultadoIA.datos_consolidados;
+
+    // Dirección: preferir campos estructurados de la IA, fallback a split de ubicacion
     const ubicacionRaw = datos.ubicacion || '';
     const partesDir = ubicacionRaw.split(',').map((p: string) => p.trim());
+
+    const calleIA = datos.calle || partesDir[0] || 'Sin especificar';
+    const coloniaIA = datos.colonia || partesDir[1] || undefined;
+    const municipioIA = datos.municipio || partesDir[2] || 'Sin especificar';
+    const estadoIA = datos.estado || partesDir[3] || 'Sin especificar';
+
+    // Superficies: preferir campos específicos, fallback a legacy
+    const parseNum = (v: string | null | undefined): number | undefined => {
+      if (!v) return undefined;
+      const n = Number(String(v).replace(/[^0-9.]/g, ''));
+      return isNaN(n) || n === 0 ? undefined : n;
+    };
 
     let usoSueloPayload: string | null = null;
     let usoSueloAuto = false;
@@ -490,15 +533,34 @@ export default function AvaluosClient() {
       banco_id: tipoAvaluo === '2.0' && bancoSeleccionado && bancoSeleccionado !== BANCO_OTRO
         ? bancoSeleccionado
         : null,
-      calle: partesDir[0] || 'Sin especificar',
-      colonia: partesDir[1] || undefined,
-      municipio: partesDir[2] || 'Sin especificar',
-      estado_inmueble: partesDir[3] || 'Sin especificar',
+      // Dirección (auto-fill desde IA)
+      calle: calleIA,
+      colonia: coloniaIA,
+      municipio: municipioIA,
+      estado_inmueble: estadoIA,
+      cp: datos.cp || undefined,
+      // Inmueble
       tipo_inmueble: 'otro' as const,
-      valor_estimado: datos.valor_estimado ? Number(datos.valor_estimado.replace(/[^0-9.]/g, '')) : undefined,
+      superficie_terreno: parseNum(datos.superficie_terreno) || parseNum(datos.superficie),
+      superficie_construccion: parseNum(datos.superficie_construccion),
+      valor_estimado: parseNum(datos.valor_estimado),
+      moneda: 'MXN',
+      uso_suelo: usoSueloPayload,
+      uso_suelo_auto: usoSueloAuto,
+      // Datos extraídos por IA → campos SHF (auto-fill)
+      propietario: datos.propietario || undefined,
+      cuenta_predial: datos.cuenta_predial || datos.clave_catastral || undefined,
+      regimen_propiedad: datos.regimen_propiedad || undefined,
+      documentacion_analizada: resultadoIA.documentos
+        .map((d) => `${d.nombre}: ${d.tipo_detectado}${d.valido ? ' ✓' : ' ✗'}`)
+        .join('; ') || undefined,
+      situacion_legal: datos.numero_escritura
+        ? `Escritura ${datos.numero_escritura}${datos.notario ? ` ante ${datos.notario}` : ''}${datos.fecha_escritura ? ` del ${datos.fecha_escritura}` : ''}${datos.rpp_folio ? `. RPP Folio: ${datos.rpp_folio}` : ''}`
+        : undefined,
+      // Legacy fields (para compatibilidad)
       propietario_nombre: datos.propietario || undefined,
       clave_catastral: datos.clave_catastral || undefined,
-      superficie_terreno: datos.superficie ? Number(datos.superficie.replace(/[^0-9.]/g, '')) : undefined,
+      // Notas
       notas: [
         esOverride
           ? `[VALIDACIÓN MANUAL DEL VALUADOR — IA bloqueó el expediente]\nMotivo: ${motivoOverride.trim()}\nErrores que reportó la IA:\n${(resultadoIA?.errores_bloqueantes ?? []).map((e) => `  • ${e}`).join('\n')}`
@@ -508,9 +570,6 @@ export default function AvaluosClient() {
       ]
         .filter(Boolean)
         .join('\n\n') || undefined,
-      moneda: 'MXN',
-      uso_suelo: usoSueloPayload,
-      uso_suelo_auto: usoSueloAuto,
     };
 
     try {

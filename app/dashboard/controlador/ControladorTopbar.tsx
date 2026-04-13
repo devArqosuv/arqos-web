@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/util/supabase/client';
+import FirmaUploadModal from '@/app/components/FirmaUploadModal';
 
 interface PerfilLigero {
   nombre: string;
@@ -19,6 +20,8 @@ function iniciales(nombre: string, apellidos: string | null) {
 
 export default function ControladorTopbar() {
   const [perfil, setPerfil] = useState<PerfilLigero | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [firmaModalAbierto, setFirmaModalAbierto] = useState(false);
 
   useEffect(() => {
     let cancelado = false;
@@ -31,7 +34,7 @@ export default function ControladorTopbar() {
         .select('nombre, apellidos, email, rol')
         .eq('id', user.id)
         .single();
-      if (!cancelado && data) setPerfil(data as PerfilLigero);
+      if (!cancelado && data) { setPerfil(data as PerfilLigero); setUserId(user.id); }
     }
     cargar();
     return () => { cancelado = true; };
@@ -58,6 +61,14 @@ export default function ControladorTopbar() {
         </nav>
       </div>
       <div className="flex items-center gap-3 border-l border-slate-200 pl-6">
+        <button
+          onClick={() => setFirmaModalAbierto(true)}
+          className="text-[10px] font-bold text-slate-400 hover:text-slate-900 border border-slate-200 hover:border-slate-300 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1"
+          title="Subir mi firma digital"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+          FIRMA
+        </button>
         <div className="text-right">
           <p className="text-xs font-bold text-slate-900">{nombreCompleto}</p>
           <p className="text-[10px] text-slate-500">{perfil?.email ?? '—'}</p>
@@ -68,6 +79,14 @@ export default function ControladorTopbar() {
           </div>
         </div>
       </div>
+
+      {userId && (
+        <FirmaUploadModal
+          userId={userId}
+          abierto={firmaModalAbierto}
+          onClose={() => setFirmaModalAbierto(false)}
+        />
+      )}
     </header>
   );
 }

@@ -102,6 +102,16 @@ interface Props {
     entorno: number;
     interior: number;
   };
+  documentos: {
+    id: string;
+    nombre: string;
+    categoria: string | null;
+    storage_path: string;
+    tipo_mime: string | null;
+    tamanio_bytes: number | null;
+    created_at: string;
+    url: string | null;
+  }[];
 }
 
 const ESTADO_LABELS: Record<string, { label: string; bg: string; color: string }> = {
@@ -116,7 +126,24 @@ const ESTADO_LABELS: Record<string, { label: string; bg: string; color: string }
   rechazado:        { label: 'Rechazado',        bg: 'bg-red-50 border-red-200',       color: 'text-red-700' },
 };
 
-export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
+const CATEGORIA_LABELS: Record<string, string> = {
+  documento: 'Expediente',
+  fachada: 'Fachada',
+  portada: 'Portada',
+  entorno: 'Entorno',
+  interior: 'Interior',
+  uso_suelo: 'Uso de suelo',
+  otro: 'Otro',
+};
+
+function formatBytes(bytes: number | null): string {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+export default function AvaluoDetailClient({ avaluo, contadoresFotos, documentos }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [toast, setToast] = useState<{ tipo: 'exito' | 'error'; texto: string } | null>(null);
@@ -860,6 +887,61 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos }: Props) {
         <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Notas del expediente</p>
           <p className="text-xs text-slate-700 font-semibold leading-relaxed whitespace-pre-line">{avaluo.notas}</p>
+        </section>
+      )}
+
+      {/* Documentación del expediente */}
+      {documentos.length > 0 && (
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">
+            Documentación ({documentos.length})
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <th className="text-left py-2 pr-4 font-bold text-slate-500 uppercase text-[10px]">Documento</th>
+                  <th className="text-left py-2 pr-4 font-bold text-slate-500 uppercase text-[10px]">Categoría</th>
+                  <th className="text-left py-2 pr-4 font-bold text-slate-500 uppercase text-[10px]">Tamaño</th>
+                  <th className="text-left py-2 pr-4 font-bold text-slate-500 uppercase text-[10px]">Fecha</th>
+                  <th className="text-right py-2 font-bold text-slate-500 uppercase text-[10px]">Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {documentos.map((doc) => (
+                  <tr key={doc.id} className="border-b border-slate-50 hover:bg-slate-50 transition">
+                    <td className="py-2.5 pr-4 font-semibold text-slate-800 flex items-center gap-2">
+                      <span className="text-base">{doc.tipo_mime?.startsWith('image/') ? '🖼' : '📄'}</span>
+                      <span className="truncate max-w-[200px]">{doc.nombre}</span>
+                    </td>
+                    <td className="py-2.5 pr-4">
+                      <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                        {CATEGORIA_LABELS[doc.categoria ?? 'otro'] ?? doc.categoria}
+                      </span>
+                    </td>
+                    <td className="py-2.5 pr-4 text-slate-500">{formatBytes(doc.tamanio_bytes)}</td>
+                    <td className="py-2.5 pr-4 text-slate-500">
+                      {new Date(doc.created_at).toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })}
+                    </td>
+                    <td className="py-2.5 text-right">
+                      {doc.url ? (
+                        <a
+                          href={doc.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:text-blue-800 font-bold text-[10px] uppercase tracking-wide"
+                        >
+                          Ver ↗
+                        </a>
+                      ) : (
+                        <span className="text-slate-400 text-[10px]">No disponible</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
     </div>

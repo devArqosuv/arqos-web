@@ -91,6 +91,12 @@ export async function crearAvaluoVacioAction(
       solicitante_id:          user.id,
       created_by:              user.id,
       notas:                   notasConsolidadas || null,
+      // Campos SHF auto-llenados por IA
+      propietario:             payload.propietario || null,
+      cuenta_predial:          payload.cuenta_predial || null,
+      regimen_propiedad:       payload.regimen_propiedad || null,
+      documentacion_analizada: payload.documentacion_analizada || null,
+      situacion_legal:         payload.situacion_legal || null,
     })
     .select('id, folio')
     .single()

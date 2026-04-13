@@ -342,12 +342,25 @@ Responde ÚNICAMENTE con un objeto JSON válido, sin markdown, sin backticks, si
     }
   ],
   "datos_consolidados": {
-    "propietario": "nombre del propietario confirmado o null",
-    "ubicacion": "dirección del inmueble confirmada o null",
-    "clave_catastral": "clave catastral o null",
-    "superficie": "superficie total con unidad o null",
+    "propietario": "nombre completo del propietario confirmado o null",
+    "ubicacion": "dirección completa del inmueble confirmada o null",
+    "calle": "solo la calle con número (ej: 'Luis I. Rodriguez 311') o null",
+    "colonia": "nombre de colonia o fraccionamiento o null",
+    "municipio": "nombre del municipio o null",
+    "estado": "nombre del estado (ej: 'Querétaro', 'CDMX') o null",
+    "cp": "código postal si aparece o null",
+    "clave_catastral": "clave catastral completa o null",
+    "cuenta_predial": "número de cuenta predial si es diferente a la clave catastral, o null",
+    "superficie_terreno": "superficie del terreno en m² (solo número, ej: '105.00') o null",
+    "superficie_construccion": "superficie de construcción en m² (solo número) si aparece en documentos o null",
+    "regimen_propiedad": "tipo de régimen (ej: 'Propiedad privada', 'Condominio', 'Ejidal') o null",
+    "numero_escritura": "número de escritura pública del Título o null",
+    "notario": "nombre del notario y número de notaría o null",
+    "fecha_escritura": "fecha de la escritura DD/MM/AAAA o null",
+    "rpp_folio": "folio del Registro Público de la Propiedad o null",
+    "valor_catastral": "valor catastral del predio (solo número) si aparece en boleta predial o null",
     "valor_estimado": "null (no aplica para validación documental)",
-    "observaciones": "resumen de validación: documentos revisados, datos confirmados, advertencias no bloqueantes (ej. diferencia de superficie) y cualquier observación relevante"
+    "observaciones": "resumen de validación: documentos revisados, datos confirmados, advertencias no bloqueantes y cualquier observación relevante"
   }
 }
 

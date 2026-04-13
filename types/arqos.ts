@@ -154,9 +154,15 @@ export interface CrearAvaluoPayload {
   valor_estimado?: number
   moneda?: string
   // Metadatos del expediente
-  propietario_nombre?: string  // Para referencia interna
-  clave_catastral?: string     // Se guarda en notas
+  propietario_nombre?: string  // Legacy — para notas
+  clave_catastral?: string     // Legacy — para notas
   notas?: string               // Notas de riesgo del evaluador
+  // Campos SHF auto-llenados por IA
+  propietario?: string
+  cuenta_predial?: string
+  regimen_propiedad?: string
+  documentacion_analizada?: string
+  situacion_legal?: string
 }
 
 // ── Documento ──────────────────────────────────────────────
