@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
 import { ResultCard } from './ResultCard';
+import { LeadCaptureModal } from './LeadCaptureModal';
 
 const TIPOS = [
   { value: 'casa', label: 'Casa' },
@@ -37,8 +38,38 @@ export function QuickEstimate({ onRefinar, onSolicitar }: Props) {
   const [superficie, setSuperficie] = useState(120);
   const [recamaras, setRecamaras] = useState<number>(3);
   const [loading, setLoading] = useState(false);
+  const [savingLead, setSavingLead] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<EstimacionResult | null>(null);
+  const [leadCapturado, setLeadCapturado] = useState(false);
+
+  const handleLeadSubmit = async (lead: { nombre: string; email: string; telefono: string }) => {
+    if (!resultado) return;
+    setSavingLead(true);
+    try {
+      await fetch('/api/guardar-estimacion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...lead,
+          direccion,
+          tipo_inmueble: tipo,
+          superficie,
+          recamaras,
+          valor_bajo: resultado.valor_bajo,
+          valor_centro: resultado.valor_centro,
+          valor_alto: resultado.valor_alto,
+          precio_m2: resultado.precio_m2,
+          ciudad_detectada: resultado.ciudad_detectada,
+          zona_detectada: resultado.zona_detectada,
+          justificacion: resultado.justificacion,
+          factores: resultado.factores,
+        }),
+      });
+    } catch { /* silently continue — don't block the user */ }
+    setSavingLead(false);
+    setLeadCapturado(true);
+  };
 
   const handleEstimar = async () => {
     if (!direccion.trim()) {
@@ -210,6 +241,12 @@ export function QuickEstimate({ onRefinar, onSolicitar }: Props) {
               </div>
             </div>
           </motion.div>
+        ) : !leadCapturado ? (
+          <LeadCaptureModal
+            key="lead"
+            onSubmit={handleLeadSubmit}
+            loading={savingLead}
+          />
         ) : (
           <motion.div
             key="result"
@@ -234,7 +271,7 @@ export function QuickEstimate({ onRefinar, onSolicitar }: Props) {
             {/* Botón volver */}
             <div className="text-center mt-6">
               <button
-                onClick={() => setResultado(null)}
+                onClick={() => { setResultado(null); setLeadCapturado(false); }}
                 className="text-xs text-arqos-gray-400 hover:text-arqos-black font-bold uppercase tracking-wider transition-colors"
               >
                 ← Nueva estimación
