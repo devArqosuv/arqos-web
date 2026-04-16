@@ -28,6 +28,12 @@ function ExpedientesPageInner() {
   const [cargando, setCargando] = useState(true);
   const [busqueda, setBusqueda] = useState('');
   const [filtroActivo, setFiltroActivo] = useState(estadoFiltro);
+  const [tipoFiltro, setTipoFiltro] = useState<string>('todos');
+  const [fechaDesde, setFechaDesde] = useState<string>('');
+  const [fechaHasta, setFechaHasta] = useState<string>('');
+  const [pagina, setPagina] = useState(1);
+  const [filtrosAvanzados, setFiltrosAvanzados] = useState(false);
+  const POR_PAGINA = 20;
 
   useEffect(() => {
     async function cargar() {
@@ -38,7 +44,7 @@ function ExpedientesPageInner() {
 
       let query = supabase
         .from('avaluos')
-        .select('id, folio, estado, tipo_inmueble, calle, colonia, municipio, estado_inmueble, valor_estimado, fecha_solicitud, notas')
+        .select('id, folio, estado, tipo_inmueble, calle, colonia, municipio, estado_inmueble, valor_estimado, fecha_solicitud, notas, propietario')
         .or(`valuador_id.eq.${user.id},solicitante_id.eq.${user.id}`)
         .order('fecha_solicitud', { ascending: false });
 
@@ -54,14 +60,33 @@ function ExpedientesPageInner() {
   }, [filtroActivo]);
 
   const avaluosFiltrados = avaluos.filter((a) => {
-    if (!busqueda) return true;
-    const q = busqueda.toLowerCase();
-    return (
-      a.folio?.toLowerCase().includes(q) ||
-      a.calle?.toLowerCase().includes(q) ||
-      a.municipio?.toLowerCase().includes(q)
-    );
+    if (busqueda) {
+      const q = busqueda.toLowerCase();
+      const match =
+        a.folio?.toLowerCase().includes(q) ||
+        a.calle?.toLowerCase().includes(q) ||
+        a.colonia?.toLowerCase().includes(q) ||
+        a.municipio?.toLowerCase().includes(q) ||
+        a.propietario?.toLowerCase().includes(q);
+      if (!match) return false;
+    }
+    if (tipoFiltro !== 'todos' && a.tipo_inmueble !== tipoFiltro) return false;
+    if (fechaDesde && new Date(a.fecha_solicitud) < new Date(fechaDesde)) return false;
+    if (fechaHasta) {
+      const hasta = new Date(fechaHasta);
+      hasta.setHours(23, 59, 59);
+      if (new Date(a.fecha_solicitud) > hasta) return false;
+    }
+    return true;
   });
+
+  const totalPaginas = Math.max(1, Math.ceil(avaluosFiltrados.length / POR_PAGINA));
+  const paginaSegura = Math.min(pagina, totalPaginas);
+  const from = (paginaSegura - 1) * POR_PAGINA;
+  const avaluosPagina = avaluosFiltrados.slice(from, from + POR_PAGINA);
+
+  // Reset a página 1 al cambiar filtros
+  useEffect(() => { setPagina(1); }, [busqueda, tipoFiltro, fechaDesde, fechaHasta, filtroActivo]);
 
   return (
 
@@ -114,11 +139,70 @@ function ExpedientesPageInner() {
                   type="text"
                   value={busqueda}
                   onChange={(e) => setBusqueda(e.target.value)}
-                  placeholder="Buscar por folio, calle o municipio..."
+                  placeholder="Buscar por folio, propietario, calle, colonia o municipio..."
                   className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300"
                 />
               </div>
+
+              <button
+                onClick={() => setFiltrosAvanzados((v) => !v)}
+                className={`text-[10px] font-bold uppercase tracking-widest px-3 py-2 rounded-xl border transition ${
+                  filtrosAvanzados ? 'bg-[#0F172A] text-white border-[#0F172A]' : 'bg-white text-slate-500 border-slate-200 hover:text-slate-900'
+                }`}
+              >
+                {filtrosAvanzados ? 'Ocultar' : 'Filtros'}
+              </button>
             </div>
+
+            {/* Panel filtros avanzados */}
+            {filtrosAvanzados && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 grid grid-cols-4 gap-3">
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Tipo</label>
+                  <select
+                    value={tipoFiltro}
+                    onChange={(e) => setTipoFiltro(e.target.value)}
+                    className="mt-1 w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"
+                  >
+                    <option value="todos">Todos</option>
+                    <option value="casa">Casa</option>
+                    <option value="departamento">Departamento</option>
+                    <option value="local_comercial">Local comercial</option>
+                    <option value="oficina">Oficina</option>
+                    <option value="terreno">Terreno</option>
+                    <option value="bodega">Bodega</option>
+                    <option value="nave_industrial">Nave industrial</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Desde</label>
+                  <input
+                    type="date"
+                    value={fechaDesde}
+                    onChange={(e) => setFechaDesde(e.target.value)}
+                    className="mt-1 w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"
+                  />
+                </div>
+                <div>
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Hasta</label>
+                  <input
+                    type="date"
+                    value={fechaHasta}
+                    onChange={(e) => setFechaHasta(e.target.value)}
+                    className="mt-1 w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    onClick={() => { setTipoFiltro('todos'); setFechaDesde(''); setFechaHasta(''); setBusqueda(''); }}
+                    className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold uppercase tracking-widest px-3 py-2 rounded-lg transition"
+                  >
+                    Limpiar
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Tabla */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -144,7 +228,7 @@ function ExpedientesPageInner() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {avaluosFiltrados.map((a) => {
+                    {avaluosPagina.map((a) => {
                       const est = ESTADO_CONFIG[a.estado] || ESTADO_CONFIG.solicitud;
                       return (
                         <tr key={a.id} className="hover:bg-slate-50 transition group">
@@ -196,12 +280,30 @@ function ExpedientesPageInner() {
                 </table>
               )}
 
-              {/* Footer con conteo */}
+              {/* Footer con paginación */}
               {!cargando && avaluosFiltrados.length > 0 && (
-                <div className="px-5 py-3 border-t border-slate-100 bg-slate-50">
+                <div className="px-5 py-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
                   <p className="text-[10px] font-semibold text-slate-400">
-                    {avaluosFiltrados.length} expediente(s) encontrado(s)
+                    {avaluosFiltrados.length} expediente(s) · Página {paginaSegura} de {totalPaginas}
                   </p>
+                  {totalPaginas > 1 && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setPagina((p) => Math.max(1, p - 1))}
+                        disabled={paginaSegura === 1}
+                        className="text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-400 transition"
+                      >
+                        ← Anterior
+                      </button>
+                      <button
+                        onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+                        disabled={paginaSegura === totalPaginas}
+                        className="text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:border-slate-400 transition"
+                      >
+                        Siguiente →
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

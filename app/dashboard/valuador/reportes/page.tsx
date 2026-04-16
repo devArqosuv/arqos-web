@@ -17,7 +17,7 @@ export default function ReportesPage() {
 
       const { data } = await supabase
         .from('avaluos')
-        .select('id, folio, estado, calle, municipio, estado_inmueble, valor_estimado, fecha_solicitud, fecha_aprobacion, tipo_inmueble')
+        .select('id, folio, estado, calle, municipio, estado_inmueble, valor_estimado, fecha_solicitud, fecha_aprobacion, tipo_inmueble, pdf_oficial_path')
         .or(`valuador_id.eq.${user.id},solicitante_id.eq.${user.id}`)
         .eq('estado', 'aprobado')
         .order('fecha_aprobacion', { ascending: false });
@@ -28,13 +28,26 @@ export default function ReportesPage() {
     cargar();
   }, []);
 
-  const handleGenerarReporte = async (avaluoId: string, folio: string) => {
+  const handleGenerarReporte = async (avaluoId: string, folio: string, pdfPath: string | null) => {
     setGenerando(avaluoId);
-    // TODO: implementar generación de PDF con librería como @react-pdf/renderer
-    // Por ahora simulamos el delay
-    await new Promise(r => setTimeout(r, 1500));
-    alert(`Reporte para ${folio} — próximamente disponible. Se implementará con @react-pdf/renderer.`);
-    setGenerando(null);
+    try {
+      if (!pdfPath) {
+        alert(`El PDF oficial de ${folio} aún no se ha generado. Contacta al controlador para confirmar que el expediente esté firmado.`);
+        return;
+      }
+      const supabase = createClient();
+      const { data, error } = await supabase.storage
+        .from('documentos')
+        .createSignedUrl(pdfPath, 3600);
+
+      if (error || !data?.signedUrl) {
+        alert(`No se pudo generar el enlace de descarga: ${error?.message || 'error desconocido'}`);
+        return;
+      }
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+    } finally {
+      setGenerando(null);
+    }
   };
 
   return (
@@ -116,7 +129,7 @@ export default function ReportesPage() {
                       </div>
 
                       <button
-                        onClick={() => handleGenerarReporte(a.id, a.folio)}
+                        onClick={() => handleGenerarReporte(a.id, a.folio, a.pdf_oficial_path)}
                         disabled={generando === a.id}
                         className="flex items-center gap-2 bg-[#0F172A] hover:bg-slate-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-[10px] font-bold px-4 py-2 rounded-xl transition"
                       >

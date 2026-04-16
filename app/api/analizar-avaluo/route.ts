@@ -438,28 +438,47 @@ REGLAS CRÍTICAS DE SALIDA:
       `,
     });
 
-    // Llamada a OpenRouter
-    const openrouterRes = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://arqos.local',
-        'X-Title': 'ARQOS - Validador de expedientes',
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 8192,
-        response_format: { type: 'json_object' },
-        messages: [{ role: 'user', content: contentBlocks }],
-      }),
-    });
+    // Llamada a OpenRouter con retry manual (max 2 intentos)
+    const maxAttempts = 2;
+    let openrouterRes: Response | null = null;
+    let lastErrText = '';
+    let lastStatus = 0;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      openrouterRes = await fetch(OPENROUTER_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'HTTP-Referer': process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://arqos.local',
+          'X-Title': 'ARQOS - Validador de expedientes',
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 8192,
+          response_format: { type: 'json_object' },
+          messages: [{ role: 'user', content: contentBlocks }],
+        }),
+      });
 
-    if (!openrouterRes.ok) {
-      const errText = await openrouterRes.text();
-      console.error('Error OpenRouter:', openrouterRes.status, errText);
+      if (openrouterRes.ok) break;
+
+      lastStatus = openrouterRes.status;
+      lastErrText = await openrouterRes.text();
+
+      // Retry only on 429 / 5xx
+      const retriable = openrouterRes.status === 429 || openrouterRes.status >= 500;
+      if (!retriable || attempt === maxAttempts - 1) break;
+
+      const retryAfter = Number(openrouterRes.headers.get('retry-after')) || 0;
+      const wait =
+        retryAfter > 0 ? retryAfter * 1000 : Math.min(1000 * Math.pow(2, attempt), 10000);
+      await new Promise((r) => setTimeout(r, wait));
+    }
+
+    if (!openrouterRes || !openrouterRes.ok) {
+      console.error('Error OpenRouter:', lastStatus, lastErrText);
       return NextResponse.json(
-        { error: `Error de OpenRouter (${openrouterRes.status}): ${errText}` },
+        { error: `Error de OpenRouter (${lastStatus}): ${lastErrText}` },
         { status: 502 }
       );
     }

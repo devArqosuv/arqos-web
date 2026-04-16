@@ -1,7 +1,16 @@
 import { NextRequest } from 'next/server';
+import { createRateLimiter, getClientIp } from '@/util/rate-limit';
+import { createLogger } from '@/util/logger';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'anthropic/claude-sonnet-4-5';
+
+const logger = createLogger('chat-valuacion');
+
+const rateLimit = createRateLimiter({
+  limit: 30,
+  windowMs: 60 * 60 * 1000, // 1h
+});
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -9,8 +18,28 @@ interface ChatMessage {
 }
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
+  const ip = getClientIp(req);
+  const rl = rateLimit(ip);
+
+  if (!rl.ok) {
+    const resetSeconds = Math.ceil(rl.resetMs / 1000);
+    logger.warn('rate_limit_exceeded', { ip, resetSeconds });
+    return new Response(
+      JSON.stringify({ error: 'rate_limit', resetInSeconds: resetSeconds }),
+      {
+        status: 429,
+        headers: {
+          'Retry-After': String(resetSeconds),
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+  }
+
   try {
     if (!process.env.OPENROUTER_API_KEY) {
+      logger.error('missing_api_key');
       return new Response(JSON.stringify({ error: 'API key no configurada.' }), { status: 500 });
     }
 
@@ -25,6 +54,12 @@ export async function POST(req: NextRequest) {
         ciudad: string;
       };
     };
+
+    logger.info('request_start', {
+      ip,
+      mensajes: body.mensajes?.length ?? 0,
+      tipo: body.contexto?.tipo,
+    });
 
     const systemPrompt = `Eres ARQOS Data, el asistente de valuación inmobiliaria de ARQOS Unidad de Valuación. Hablas en español mexicano, eres profesional pero accesible.
 
@@ -77,9 +112,19 @@ REGLAS:
 
     if (!openrouterRes.ok) {
       const err = await openrouterRes.text();
-      console.error('OpenRouter stream error:', openrouterRes.status, err);
+      logger.error('openrouter_stream_error', {
+        ip,
+        status: openrouterRes.status,
+        body: err.slice(0, 200),
+        latencyMs: Date.now() - startedAt,
+      });
       return new Response(JSON.stringify({ error: 'Error al consultar la IA.' }), { status: 502 });
     }
+
+    logger.info('stream_opened', {
+      ip,
+      latencyMs: Date.now() - startedAt,
+    });
 
     // Forward the stream directly
     return new Response(openrouterRes.body, {
@@ -90,7 +135,11 @@ REGLAS:
       },
     });
   } catch (error) {
-    console.error('Error en /api/chat-valuacion:', error);
+    logger.error('unhandled_error', {
+      ip,
+      error: error instanceof Error ? error.message : String(error),
+      latencyMs: Date.now() - startedAt,
+    });
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Error interno.' }),
       { status: 500 },

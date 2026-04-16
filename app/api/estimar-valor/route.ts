@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createRateLimiter, getClientIp } from '@/util/rate-limit';
+import { callOpenRouter } from '@/util/openrouter';
+import { createLogger } from '@/util/logger';
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'anthropic/claude-sonnet-4-5';
+
+const logger = createLogger('estimar-valor');
+
+const rateLimit = createRateLimiter({
+  limit: 10,
+  windowMs: 60 * 60 * 1000, // 1h
+});
 
 interface EstimacionRequest {
   direccion: string;
@@ -12,8 +21,25 @@ interface EstimacionRequest {
 }
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
+  const ip = getClientIp(req);
+  const rl = rateLimit(ip);
+
+  if (!rl.ok) {
+    const resetSeconds = Math.ceil(rl.resetMs / 1000);
+    logger.warn('rate_limit_exceeded', { ip, resetSeconds });
+    return NextResponse.json(
+      { error: 'rate_limit', resetInSeconds: resetSeconds },
+      {
+        status: 429,
+        headers: { 'Retry-After': String(resetSeconds) },
+      },
+    );
+  }
+
   try {
     if (!process.env.OPENROUTER_API_KEY) {
+      logger.error('missing_api_key');
       return NextResponse.json({ error: 'API key no configurada.' }, { status: 500 });
     }
 
@@ -23,6 +49,8 @@ export async function POST(req: NextRequest) {
     if (!direccion || !tipo || !superficie) {
       return NextResponse.json({ error: 'Faltan campos requeridos.' }, { status: 400 });
     }
+
+    logger.info('request_start', { ip, tipo, superficie, recamaras });
 
     const prompt = `Eres un valuador inmobiliario experto en México con acceso a datos de mercado actualizados a 2026.
 
@@ -60,32 +88,30 @@ Responde ÚNICAMENTE con un JSON válido (sin markdown, sin backticks):
   "riesgos": ["riesgo o factor negativo 1"]
 }`;
 
-    const openrouterRes = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://arqosuv.com',
-        'X-Title': 'ARQOS Data - Estimador de valor',
-      },
-      body: JSON.stringify({
+    let raw = '';
+    try {
+      const result = await callOpenRouter({
         model: MODEL,
         max_tokens: 1024,
         response_format: { type: 'json_object' },
         messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-
-    if (!openrouterRes.ok) {
-      const err = await openrouterRes.text();
-      console.error('OpenRouter error:', openrouterRes.status, err);
+        extraHeaders: {
+          'HTTP-Referer': process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://arqosuv.com',
+          'X-Title': 'ARQOS Data - Estimador de valor',
+        },
+      });
+      raw = result.content?.trim() ?? '';
+    } catch (err) {
+      logger.error('openrouter_failed', {
+        ip,
+        error: err instanceof Error ? err.message : String(err),
+        latencyMs: Date.now() - startedAt,
+      });
       return NextResponse.json({ error: 'Error al consultar la IA.' }, { status: 502 });
     }
 
-    const json = await openrouterRes.json();
-    const raw = json?.choices?.[0]?.message?.content?.trim() ?? '';
-
     if (!raw) {
+      logger.error('empty_ia_response', { ip });
       return NextResponse.json({ error: 'La IA no respondió.' }, { status: 500 });
     }
 
@@ -97,17 +123,31 @@ Responde ÚNICAMENTE con un JSON válido (sin markdown, sin backticks):
       const first = raw.indexOf('{');
       const last = raw.lastIndexOf('}');
       if (first !== -1 && last > first) {
-        try { parsed = JSON.parse(raw.slice(first, last + 1)); } catch { /* fall through */ }
+        try {
+          parsed = JSON.parse(raw.slice(first, last + 1));
+        } catch {
+          /* fall through */
+        }
       }
     }
 
     if (!parsed) {
+      logger.error('invalid_ia_response', { ip });
       return NextResponse.json({ error: 'Respuesta inválida de la IA.' }, { status: 500 });
     }
 
+    logger.info('request_success', {
+      ip,
+      latencyMs: Date.now() - startedAt,
+    });
+
     return NextResponse.json(parsed);
   } catch (error) {
-    console.error('Error en /api/estimar-valor:', error);
+    logger.error('unhandled_error', {
+      ip,
+      error: error instanceof Error ? error.message : String(error),
+      latencyMs: Date.now() - startedAt,
+    });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Error interno.' },
       { status: 500 },

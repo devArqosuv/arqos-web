@@ -6,6 +6,96 @@ import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/util/supabase/client';
 
 // ─────────────────────────────────────────────────────────
+// Noticias: tipos + helpers
+// ─────────────────────────────────────────────────────────
+type TipoNoticia = 'info' | 'actualizacion' | 'alerta' | 'mantenimiento';
+
+interface Noticia {
+  id: string;
+  titulo: string;
+  contenido: string;
+  tipo: TipoNoticia;
+  fecha_publicacion: string;
+}
+
+const ESTILO_NOTICIA: Record<TipoNoticia, { bg: string; border: string; text: string; icon: string; label: string }> = {
+  info:          { bg: 'bg-sky-50',     border: 'border-sky-200',     text: 'text-sky-700',     icon: 'ℹ',  label: 'Información' },
+  actualizacion: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', icon: '✦', label: 'Nuevo' },
+  alerta:        { bg: 'bg-red-50',     border: 'border-red-200',     text: 'text-red-700',     icon: '!',  label: 'Alerta' },
+  mantenimiento: { bg: 'bg-amber-50',   border: 'border-amber-200',   text: 'text-amber-700',   icon: '⚙', label: 'Mantenimiento' },
+};
+
+function NoticiasPanelValuador() {
+  const [noticias, setNoticias] = useState<Noticia[]>([]);
+  const [cargando, setCargando] = useState(true);
+
+  useEffect(() => {
+    let cancelado = false;
+    async function cargar() {
+      const supabase = createClient();
+      const ahora = new Date().toISOString();
+      const { data } = await supabase
+        .from('noticias')
+        .select('id, titulo, contenido, tipo, fecha_publicacion, fecha_expiracion, roles_destinatarios, activa')
+        .eq('activa', true)
+        .contains('roles_destinatarios', ['evaluador'])
+        .or(`fecha_expiracion.is.null,fecha_expiracion.gt.${ahora}`)
+        .order('fecha_publicacion', { ascending: false })
+        .limit(5);
+      if (cancelado) return;
+      setNoticias(((data ?? []) as Noticia[]));
+      setCargando(false);
+    }
+    cargar();
+    return () => { cancelado = true; };
+  }, []);
+
+  return (
+    <div className="mx-6 mt-6 bg-white border border-slate-200 rounded-xl">
+      <div className="border-b border-slate-100 px-5 py-3 flex items-center justify-center">
+        <h2 className="text-xs font-black text-slate-700 border-b-2 border-slate-900 pb-1">
+          Últimas noticias
+        </h2>
+      </div>
+      {cargando ? (
+        <div className="p-5 space-y-2">
+          {[1, 2].map((i) => (
+            <div key={i} className="h-14 bg-slate-50 rounded animate-pulse" />
+          ))}
+        </div>
+      ) : noticias.length === 0 ? (
+        <div className="py-10 text-center">
+          <p className="text-xs text-slate-400 font-semibold">Sin noticias recientes</p>
+        </div>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {noticias.map((n) => {
+            const estilo = ESTILO_NOTICIA[n.tipo];
+            return (
+              <li key={n.id} className={`px-5 py-4 flex gap-3 ${estilo.bg}`}>
+                <div className={`shrink-0 w-8 h-8 rounded-full ${estilo.border} border flex items-center justify-center text-sm font-black ${estilo.text} bg-white`}>
+                  {estilo.icon}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className={`text-[10px] font-black uppercase tracking-widest ${estilo.text}`}>{estilo.label}</p>
+                    <span className="text-[10px] text-slate-400 font-semibold">
+                      {new Date(n.fecha_publicacion).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </span>
+                  </div>
+                  <p className="text-xs font-black text-slate-900 mt-0.5">{n.titulo}</p>
+                  <p className="text-[11px] text-slate-600 leading-relaxed mt-1 whitespace-pre-wrap">{n.contenido}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
 // Columnas de estado del flujo ARQOS (inspirado en tabla SAX)
 // ─────────────────────────────────────────────────────────
 const COLUMNAS_ESTADO = [
@@ -157,17 +247,8 @@ export default function ValuadorInicio() {
           </p>
         </div>
 
-        {/* SECCIÓN: Últimas noticias (placeholder) */}
-        <div className="mx-6 mt-6 bg-white border border-slate-200 rounded-xl">
-          <div className="border-b border-slate-100 px-5 py-3 flex items-center justify-center">
-            <h2 className="text-xs font-black text-slate-700 border-b-2 border-slate-900 pb-1">
-              Últimas noticias
-            </h2>
-          </div>
-          <div className="py-10 text-center">
-            <p className="text-xs text-slate-400 font-semibold">No se ha encontrado ninguna noticia</p>
-          </div>
-        </div>
+        {/* SECCIÓN: Últimas noticias */}
+        <NoticiasPanelValuador />
 
         {/* SECCIÓN: Reporte inicial */}
         <div className="mx-6 mt-6 bg-white border border-slate-200 rounded-xl overflow-hidden">
