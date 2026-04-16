@@ -157,7 +157,7 @@ export interface CrearAvaluoPayload {
   propietario_nombre?: string  // Legacy — para notas
   clave_catastral?: string     // Legacy — para notas
   notas?: string               // Notas de riesgo del evaluador
-  // Campos SHF auto-llenados por IA
+  // Campos SHF auto-llenados por IA — identificación y legal
   propietario?: string
   solicitante?: string
   cuenta_predial?: string
@@ -166,10 +166,27 @@ export interface CrearAvaluoPayload {
   situacion_legal?: string
   restricciones_servidumbres?: string
   medidas_colindancias?: string
+  valor_catastral?: number
+  // Campos SHF — descripción del inmueble
   uso_suelo_detectado?: string
   edad_inmueble?: number
   tipo_inmueble_detectado?: string
-  valor_catastral?: number
+  descripcion_fisica?: string
+  construcciones?: string
+  instalaciones?: string
+  estado_conservacion?: string
+  topografia_forma?: string
+  num_recamaras?: number
+  num_banos?: number
+  num_estacionamientos?: number
+  // Campos SHF — características urbanas
+  clasificacion_zona?: string
+  uso_predominante?: string
+  tipo_zona?: string
+  cuenta_agua?: string
+  // Campos SHF — folios
+  folio_infonavit?: string
+  clave_unica_vivienda?: string
 }
 
 // ── Documento ──────────────────────────────────────────────

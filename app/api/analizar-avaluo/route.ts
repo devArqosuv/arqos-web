@@ -384,10 +384,28 @@ Responde ÚNICAMENTE con un objeto JSON válido, sin markdown, sin backticks, si
     "restricciones_servidumbres": "restricciones, servidumbres o gravámenes mencionados en el título o null",
     "medidas_colindancias": "medidas y colindancias del predio si aparecen en el título (ej: 'Norte 10m con lote 5, Sur 10m con calle, Este 15m con lote 3, Oeste 15m con lote 7') o null",
 
-    // === DESCRIPCIÓN DEL INMUEBLE (de cualquier documento que mencione) ===
-    "tipo_inmueble_detectado": "tipo de inmueble inferido de los documentos (ej: 'casa', 'departamento', 'terreno', 'local_comercial') o null",
-    "edad_inmueble": "antigüedad del inmueble en años si se puede calcular de la escritura o null",
-    "uso_suelo_detectado": "uso de suelo si aparece en algún documento (ej: 'Habitacional', 'Comercial', 'Mixto') o null",
+    // === DESCRIPCIÓN DEL INMUEBLE (inferir de cualquier documento) ===
+    "tipo_inmueble_detectado": "tipo de inmueble inferido (ej: 'casa', 'departamento', 'terreno', 'local_comercial', 'oficina', 'bodega') o null",
+    "edad_inmueble": "antigüedad en años calculada desde fecha de escritura o mención en documentos (solo número) o null",
+    "uso_suelo_detectado": "uso de suelo si aparece (ej: 'Habitacional H1', 'Comercial', 'Mixto') o null",
+    "descripcion_fisica": "descripción física del inmueble si se menciona en la escritura o documentos (materiales, niveles, distribución) o null",
+    "construcciones": "descripción de las construcciones mencionadas en documentos (ej: '2 niveles, 3 recámaras, 2 baños, sala-comedor, cocina, patio') o null",
+    "instalaciones": "instalaciones especiales mencionadas (ej: 'Cisterna, tinaco, calentador solar, gas estacionario') o null",
+    "estado_conservacion": "estado de conservación si se menciona o infiere de documentos (ej: 'Bueno', 'Regular', 'Nuevo') o null",
+    "topografia_forma": "topografía y forma del terreno si aparece en escritura o plano (ej: 'Plano, forma regular rectangular') o null",
+    "num_recamaras": "número de recámaras si se menciona (solo número) o null",
+    "num_banos": "número de baños si se menciona (solo número) o null",
+    "num_estacionamientos": "número de estacionamientos si se menciona (solo número) o null",
+
+    // === CARACTERÍSTICAS URBANAS (inferir del contexto y documentos) ===
+    "clasificacion_zona": "clasificación de la zona si se puede inferir de la ubicación (ej: 'Residencial media', 'Comercial', 'Industrial') o null",
+    "uso_predominante": "uso predominante de la zona si se puede inferir (ej: 'Habitacional', 'Comercial', 'Mixto') o null",
+    "tipo_zona": "tipo de zona urbana si se menciona o infiere (ej: 'Urbana', 'Suburbana', 'Rural') o null",
+    "cuenta_agua": "cuenta o número de servicio de agua si aparece en documentos o null",
+
+    // === FOLIOS E IDENTIFICADORES ===
+    "folio_infonavit": "folio de Infonavit si aparece en algún documento o null",
+    "clave_unica_vivienda": "clave única de vivienda (CUV) si aparece o null",
 
     // === DOCUMENTACIÓN ANALIZADA (resumen automático) ===
     "documentacion_analizada": "lista de documentos analizados y su tipo detectado, separados por punto y coma",
@@ -396,6 +414,15 @@ Responde ÚNICAMENTE con un objeto JSON válido, sin markdown, sin backticks, si
     "valor_estimado": "null (no aplica para validación documental)",
     "observaciones": "resumen de validación: documentos revisados, datos confirmados, advertencias no bloqueantes y cualquier observación relevante para el expediente"
   }
+
+INSTRUCCIÓN FINAL IMPORTANTE — EXTRAE ABSOLUTAMENTE TODO:
+Revisa cada documento con lupa y extrae TODOS los datos posibles para los campos anteriores.
+Si un campo puede llenarse con información de CUALQUIER documento del expediente, llénalo.
+No dejes null un campo si la información está en alguno de los documentos.
+Prefiere extraer datos parciales a dejar vacío — es mejor "2 niveles" que null.
+La escritura notarial suele contener: medidas, colindancias, superficie, descripción del inmueble, régimen, restricciones.
+La boleta predial suele contener: clave catastral, valor catastral, superficie, uso de suelo, cuenta de agua a veces.
+La INE contiene: nombre del titular, vigencia.
 }
 
 REGLAS CRÍTICAS DE SALIDA:

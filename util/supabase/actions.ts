@@ -91,7 +91,7 @@ export async function crearAvaluoVacioAction(
       solicitante_id:          user.id,
       created_by:              user.id,
       notas:                   notasConsolidadas || null,
-      // Campos SHF auto-llenados por IA
+      // Campos SHF auto-llenados por IA — TODOS los que la IA pueda extraer
       propietario:             payload.propietario || null,
       solicitante:             payload.solicitante || null,
       cuenta_predial:          payload.cuenta_predial || null,
@@ -101,6 +101,23 @@ export async function crearAvaluoVacioAction(
       restricciones_servidumbres: payload.restricciones_servidumbres || null,
       medidas_colindancias:    payload.medidas_colindancias || null,
       edad_inmueble:           payload.edad_inmueble || null,
+      // Descripción del inmueble
+      descripcion_fisica:      payload.descripcion_fisica || null,
+      construcciones:          payload.construcciones || null,
+      instalaciones:           payload.instalaciones || null,
+      estado_conservacion:     payload.estado_conservacion || null,
+      topografia_forma:        payload.topografia_forma || null,
+      num_recamaras:           payload.num_recamaras || null,
+      num_banos:               payload.num_banos || null,
+      num_estacionamientos:    payload.num_estacionamientos || null,
+      // Características urbanas
+      clasificacion_zona:      payload.clasificacion_zona || null,
+      uso_predominante:        payload.uso_predominante || null,
+      tipo_zona:               payload.tipo_zona || null,
+      cuenta_agua:             payload.cuenta_agua || null,
+      // Folios
+      folio_infonavit:         payload.folio_infonavit || null,
+      clave_unica_vivienda:    payload.clave_unica_vivienda || null,
     })
     .select('id, folio')
     .single()

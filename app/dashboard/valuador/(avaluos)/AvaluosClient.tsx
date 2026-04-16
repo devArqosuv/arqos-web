@@ -95,10 +95,26 @@ interface ResultadoAnalisis {
     situacion_legal: string | null;
     restricciones_servidumbres: string | null;
     medidas_colindancias: string | null;
-    // Descripción
+    // Descripción del inmueble
     tipo_inmueble_detectado: string | null;
     edad_inmueble: string | null;
     uso_suelo_detectado: string | null;
+    descripcion_fisica: string | null;
+    construcciones: string | null;
+    instalaciones: string | null;
+    estado_conservacion: string | null;
+    topografia_forma: string | null;
+    num_recamaras: string | null;
+    num_banos: string | null;
+    num_estacionamientos: string | null;
+    // Características urbanas
+    clasificacion_zona: string | null;
+    uso_predominante: string | null;
+    tipo_zona: string | null;
+    cuenta_agua: string | null;
+    // Folios
+    folio_infonavit: string | null;
+    clave_unica_vivienda: string | null;
     // Documentación
     documentacion_analizada: string | null;
     // Valores
@@ -375,6 +391,10 @@ export default function AvaluosClient() {
       regimen_propiedad: null, numero_escritura: null, notario: null, fecha_escritura: null,
       rpp_folio: null, situacion_legal: null, restricciones_servidumbres: null, medidas_colindancias: null,
       tipo_inmueble_detectado: null, edad_inmueble: null, uso_suelo_detectado: null,
+      descripcion_fisica: null, construcciones: null, instalaciones: null, estado_conservacion: null,
+      topografia_forma: null, num_recamaras: null, num_banos: null, num_estacionamientos: null,
+      clasificacion_zona: null, uso_predominante: null, tipo_zona: null, cuenta_agua: null,
+      folio_infonavit: null, clave_unica_vivienda: null,
       documentacion_analizada: null, valor_estimado: null, observaciones: null,
     });
     const resultadoConError = (mensaje: string): ResultadoAnalisis => ({
@@ -497,6 +517,20 @@ export default function AvaluosClient() {
           tipo_inmueble_detectado: r?.datos_consolidados?.tipo_inmueble_detectado ?? null,
           edad_inmueble:           r?.datos_consolidados?.edad_inmueble           ?? null,
           uso_suelo_detectado:     r?.datos_consolidados?.uso_suelo_detectado     ?? null,
+          descripcion_fisica:      r?.datos_consolidados?.descripcion_fisica      ?? null,
+          construcciones:          r?.datos_consolidados?.construcciones          ?? null,
+          instalaciones:           r?.datos_consolidados?.instalaciones           ?? null,
+          estado_conservacion:     r?.datos_consolidados?.estado_conservacion     ?? null,
+          topografia_forma:        r?.datos_consolidados?.topografia_forma        ?? null,
+          num_recamaras:           r?.datos_consolidados?.num_recamaras           ?? null,
+          num_banos:               r?.datos_consolidados?.num_banos               ?? null,
+          num_estacionamientos:    r?.datos_consolidados?.num_estacionamientos    ?? null,
+          clasificacion_zona:      r?.datos_consolidados?.clasificacion_zona      ?? null,
+          uso_predominante:        r?.datos_consolidados?.uso_predominante        ?? null,
+          tipo_zona:               r?.datos_consolidados?.tipo_zona               ?? null,
+          cuenta_agua:             r?.datos_consolidados?.cuenta_agua             ?? null,
+          folio_infonavit:         r?.datos_consolidados?.folio_infonavit         ?? null,
+          clave_unica_vivienda:    r?.datos_consolidados?.clave_unica_vivienda    ?? null,
           documentacion_analizada: r?.datos_consolidados?.documentacion_analizada ?? null,
           valor_estimado:          r?.datos_consolidados?.valor_estimado          ?? null,
           observaciones:           r?.datos_consolidados?.observaciones           ?? null,
@@ -592,6 +626,23 @@ export default function AvaluosClient() {
       edad_inmueble: datos.edad_inmueble ? Number(datos.edad_inmueble) : undefined,
       tipo_inmueble_detectado: datos.tipo_inmueble_detectado || undefined,
       valor_catastral: datos.valor_catastral ? Number(String(datos.valor_catastral).replace(/[^0-9.]/g, '')) : undefined,
+      // Descripción del inmueble
+      descripcion_fisica: datos.descripcion_fisica || undefined,
+      construcciones: datos.construcciones || undefined,
+      instalaciones: datos.instalaciones || undefined,
+      estado_conservacion: datos.estado_conservacion || undefined,
+      topografia_forma: datos.topografia_forma || undefined,
+      num_recamaras: datos.num_recamaras ? Number(datos.num_recamaras) : undefined,
+      num_banos: datos.num_banos ? Number(datos.num_banos) : undefined,
+      num_estacionamientos: datos.num_estacionamientos ? Number(datos.num_estacionamientos) : undefined,
+      // Características urbanas
+      clasificacion_zona: datos.clasificacion_zona || undefined,
+      uso_predominante: datos.uso_predominante || undefined,
+      tipo_zona: datos.tipo_zona || undefined,
+      cuenta_agua: datos.cuenta_agua || undefined,
+      // Folios
+      folio_infonavit: datos.folio_infonavit || undefined,
+      clave_unica_vivienda: datos.clave_unica_vivienda || undefined,
       // Legacy fields (para compatibilidad)
       propietario_nombre: datos.propietario || undefined,
       clave_catastral: datos.clave_catastral || undefined,
