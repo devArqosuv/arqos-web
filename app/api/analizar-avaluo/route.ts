@@ -332,35 +332,69 @@ Responde ÚNICAMENTE con un objeto JSON válido, sin markdown, sin backticks, si
       "tipo_coincide": true | false,
       "valido": true | false,
       "datos_extraidos": {
-        "numero_titulo": "valor o null",
         "propietario": "nombre completo o null",
         "ubicacion": "dirección completa o null",
-        "superficie": "con unidad o null",
-        "fecha": "DD/MM/AAAA o null"
+        "superficie_terreno": "en m² solo número o null",
+        "superficie_construccion": "en m² solo número o null",
+        "fecha": "DD/MM/AAAA o null",
+        "numero_escritura": "número de escritura o null (solo Título)",
+        "notario": "nombre y número de notaría o null (solo Título)",
+        "rpp_folio": "folio RPP o null (solo Título)",
+        "regimen_propiedad": "tipo de régimen o null (solo Título)",
+        "medidas_colindancias": "medidas y colindancias del predio o null (solo Título)",
+        "restricciones": "gravámenes o restricciones o null (solo Título)",
+        "clave_catastral": "clave catastral o null (solo Boleta)",
+        "valor_catastral": "valor catastral en pesos o null (solo Boleta)",
+        "cuenta_predial": "cuenta predial o null (solo Boleta)",
+        "uso_suelo": "uso de suelo si aparece o null",
+        "vigencia": "fecha de vigencia o vencimiento o null (solo INE)"
       },
       "errores": ["descripción del error si valido=false, array vacío si valido=true. Si tipo_coincide=false, el primer error DEBE explicar el mismatch de tipo"]
     }
   ],
   "datos_consolidados": {
+    // === IDENTIFICACIÓN Y PROPIETARIO ===
     "propietario": "nombre completo del propietario confirmado o null",
+    "solicitante": "nombre del solicitante del crédito si aparece en INE u otro documento, o null",
+
+    // === DIRECCIÓN DESGLOSADA ===
     "ubicacion": "dirección completa del inmueble confirmada o null",
     "calle": "solo la calle con número (ej: 'Luis I. Rodriguez 311') o null",
     "colonia": "nombre de colonia o fraccionamiento o null",
     "municipio": "nombre del municipio o null",
     "estado": "nombre del estado (ej: 'Querétaro', 'CDMX') o null",
     "cp": "código postal si aparece o null",
+
+    // === DATOS CATASTRALES (de Boleta Predial) ===
     "clave_catastral": "clave catastral completa o null",
-    "cuenta_predial": "número de cuenta predial si es diferente a la clave catastral, o null",
+    "cuenta_predial": "número de cuenta predial si es diferente a clave catastral, o null",
+    "valor_catastral": "valor catastral del predio en pesos (solo número) o null",
+
+    // === SUPERFICIES ===
     "superficie_terreno": "superficie del terreno en m² (solo número, ej: '105.00') o null",
-    "superficie_construccion": "superficie de construcción en m² (solo número) si aparece en documentos o null",
-    "regimen_propiedad": "tipo de régimen (ej: 'Propiedad privada', 'Condominio', 'Ejidal') o null",
+    "superficie_construccion": "superficie de construcción en m² (solo número) o null",
+
+    // === DATOS LEGALES (del Título de Propiedad / Escritura) ===
+    "regimen_propiedad": "tipo de régimen (ej: 'Propiedad privada', 'Condominio', 'Ejidal', 'Copropiedad') o null",
     "numero_escritura": "número de escritura pública del Título o null",
     "notario": "nombre del notario y número de notaría o null",
     "fecha_escritura": "fecha de la escritura DD/MM/AAAA o null",
     "rpp_folio": "folio del Registro Público de la Propiedad o null",
-    "valor_catastral": "valor catastral del predio (solo número) si aparece en boleta predial o null",
+    "situacion_legal": "descripción de la situación legal del inmueble extraída de la escritura (ej: 'Libre de gravámenes', 'Hipoteca vigente', 'Prescripción positiva') o null",
+    "restricciones_servidumbres": "restricciones, servidumbres o gravámenes mencionados en el título o null",
+    "medidas_colindancias": "medidas y colindancias del predio si aparecen en el título (ej: 'Norte 10m con lote 5, Sur 10m con calle, Este 15m con lote 3, Oeste 15m con lote 7') o null",
+
+    // === DESCRIPCIÓN DEL INMUEBLE (de cualquier documento que mencione) ===
+    "tipo_inmueble_detectado": "tipo de inmueble inferido de los documentos (ej: 'casa', 'departamento', 'terreno', 'local_comercial') o null",
+    "edad_inmueble": "antigüedad del inmueble en años si se puede calcular de la escritura o null",
+    "uso_suelo_detectado": "uso de suelo si aparece en algún documento (ej: 'Habitacional', 'Comercial', 'Mixto') o null",
+
+    // === DOCUMENTACIÓN ANALIZADA (resumen automático) ===
+    "documentacion_analizada": "lista de documentos analizados y su tipo detectado, separados por punto y coma",
+
+    // === OBSERVACIONES GENERALES ===
     "valor_estimado": "null (no aplica para validación documental)",
-    "observaciones": "resumen de validación: documentos revisados, datos confirmados, advertencias no bloqueantes y cualquier observación relevante"
+    "observaciones": "resumen de validación: documentos revisados, datos confirmados, advertencias no bloqueantes y cualquier observación relevante para el expediente"
   }
 }
 

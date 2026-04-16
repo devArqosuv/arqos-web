@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { crearAvaluoVacioAction, registrarDocumentosAction } from '@/util/supabase/actions';
+import type { TipoInmueble } from '@/types/arqos';
 import { createClient } from '@/util/supabase/client';
 import ValuadorTopbar from '../ValuadorTopbar';
 
@@ -67,24 +68,40 @@ interface ResultadoAnalisis {
   errores_bloqueantes: string[];
   documentos: ResultadoDocumento[];
   datos_consolidados: {
+    // Propietario y solicitante
     propietario: string | null;
+    solicitante: string | null;
+    // Dirección
     ubicacion: string | null;
     calle: string | null;
     colonia: string | null;
     municipio: string | null;
     estado: string | null;
     cp: string | null;
+    // Catastral
     clave_catastral: string | null;
     cuenta_predial: string | null;
+    valor_catastral: string | null;
+    // Superficies
     superficie_terreno: string | null;
     superficie_construccion: string | null;
     superficie: string | null; // legacy fallback
+    // Legal
     regimen_propiedad: string | null;
     numero_escritura: string | null;
     notario: string | null;
     fecha_escritura: string | null;
     rpp_folio: string | null;
-    valor_catastral: string | null;
+    situacion_legal: string | null;
+    restricciones_servidumbres: string | null;
+    medidas_colindancias: string | null;
+    // Descripción
+    tipo_inmueble_detectado: string | null;
+    edad_inmueble: string | null;
+    uso_suelo_detectado: string | null;
+    // Documentación
+    documentacion_analizada: string | null;
+    // Valores
     valor_estimado: string | null;
     observaciones: string | null;
   };
@@ -350,18 +367,21 @@ export default function AvaluosClient() {
     setValidacionManual(false);
     setMotivoOverride('');
 
+    const emptyConsolidados = (): ResultadoAnalisis['datos_consolidados'] => ({
+      propietario: null, solicitante: null,
+      ubicacion: null, calle: null, colonia: null, municipio: null, estado: null, cp: null,
+      clave_catastral: null, cuenta_predial: null, valor_catastral: null,
+      superficie_terreno: null, superficie_construccion: null, superficie: null,
+      regimen_propiedad: null, numero_escritura: null, notario: null, fecha_escritura: null,
+      rpp_folio: null, situacion_legal: null, restricciones_servidumbres: null, medidas_colindancias: null,
+      tipo_inmueble_detectado: null, edad_inmueble: null, uso_suelo_detectado: null,
+      documentacion_analizada: null, valor_estimado: null, observaciones: null,
+    });
     const resultadoConError = (mensaje: string): ResultadoAnalisis => ({
       valido: false,
       errores_bloqueantes: [mensaje],
       documentos: [],
-      datos_consolidados: {
-        propietario: null, ubicacion: null, calle: null, colonia: null,
-        municipio: null, estado: null, cp: null, clave_catastral: null,
-        cuenta_predial: null, superficie_terreno: null, superficie_construccion: null,
-        superficie: null, regimen_propiedad: null, numero_escritura: null,
-        notario: null, fecha_escritura: null, rpp_folio: null,
-        valor_catastral: null, valor_estimado: null, observaciones: null,
-      },
+      datos_consolidados: emptyConsolidados(),
     });
 
     try {
@@ -453,6 +473,7 @@ export default function AvaluosClient() {
         documentos: Array.isArray(r?.documentos) ? r.documentos : [],
         datos_consolidados: {
           propietario:             r?.datos_consolidados?.propietario             ?? null,
+          solicitante:             r?.datos_consolidados?.solicitante             ?? null,
           ubicacion:               r?.datos_consolidados?.ubicacion               ?? null,
           calle:                   r?.datos_consolidados?.calle                   ?? null,
           colonia:                 r?.datos_consolidados?.colonia                 ?? null,
@@ -461,6 +482,7 @@ export default function AvaluosClient() {
           cp:                      r?.datos_consolidados?.cp                      ?? null,
           clave_catastral:         r?.datos_consolidados?.clave_catastral         ?? null,
           cuenta_predial:          r?.datos_consolidados?.cuenta_predial          ?? null,
+          valor_catastral:         r?.datos_consolidados?.valor_catastral         ?? null,
           superficie_terreno:      r?.datos_consolidados?.superficie_terreno      ?? null,
           superficie_construccion: r?.datos_consolidados?.superficie_construccion ?? null,
           superficie:              r?.datos_consolidados?.superficie              ?? r?.datos_consolidados?.superficie_terreno ?? null,
@@ -469,7 +491,13 @@ export default function AvaluosClient() {
           notario:                 r?.datos_consolidados?.notario                 ?? null,
           fecha_escritura:         r?.datos_consolidados?.fecha_escritura         ?? null,
           rpp_folio:               r?.datos_consolidados?.rpp_folio               ?? null,
-          valor_catastral:         r?.datos_consolidados?.valor_catastral         ?? null,
+          situacion_legal:         r?.datos_consolidados?.situacion_legal         ?? null,
+          restricciones_servidumbres: r?.datos_consolidados?.restricciones_servidumbres ?? null,
+          medidas_colindancias:    r?.datos_consolidados?.medidas_colindancias    ?? null,
+          tipo_inmueble_detectado: r?.datos_consolidados?.tipo_inmueble_detectado ?? null,
+          edad_inmueble:           r?.datos_consolidados?.edad_inmueble           ?? null,
+          uso_suelo_detectado:     r?.datos_consolidados?.uso_suelo_detectado     ?? null,
+          documentacion_analizada: r?.datos_consolidados?.documentacion_analizada ?? null,
           valor_estimado:          r?.datos_consolidados?.valor_estimado          ?? null,
           observaciones:           r?.datos_consolidados?.observaciones           ?? null,
         },
@@ -539,24 +567,31 @@ export default function AvaluosClient() {
       municipio: municipioIA,
       estado_inmueble: estadoIA,
       cp: datos.cp || undefined,
-      // Inmueble
-      tipo_inmueble: 'otro' as const,
+      // Inmueble — tipo detectado por IA o 'otro' como fallback
+      tipo_inmueble: ((['casa', 'departamento', 'local_comercial', 'oficina', 'terreno', 'bodega', 'nave_industrial'] as const).find(t => t === datos.tipo_inmueble_detectado) ?? 'otro') as TipoInmueble,
       superficie_terreno: parseNum(datos.superficie_terreno) || parseNum(datos.superficie),
       superficie_construccion: parseNum(datos.superficie_construccion),
       valor_estimado: parseNum(datos.valor_estimado),
       moneda: 'MXN',
-      uso_suelo: usoSueloPayload,
+      uso_suelo: usoSueloPayload || datos.uso_suelo_detectado || undefined,
       uso_suelo_auto: usoSueloAuto,
-      // Datos extraídos por IA → campos SHF (auto-fill)
+      // Datos extraídos por IA → campos SHF (auto-fill completo)
       propietario: datos.propietario || undefined,
+      solicitante: datos.solicitante || undefined,
       cuenta_predial: datos.cuenta_predial || datos.clave_catastral || undefined,
       regimen_propiedad: datos.regimen_propiedad || undefined,
-      documentacion_analizada: resultadoIA.documentos
+      documentacion_analizada: datos.documentacion_analizada || resultadoIA.documentos
         .map((d) => `${d.nombre}: ${d.tipo_detectado}${d.valido ? ' ✓' : ' ✗'}`)
         .join('; ') || undefined,
-      situacion_legal: datos.numero_escritura
+      situacion_legal: datos.situacion_legal || (datos.numero_escritura
         ? `Escritura ${datos.numero_escritura}${datos.notario ? ` ante ${datos.notario}` : ''}${datos.fecha_escritura ? ` del ${datos.fecha_escritura}` : ''}${datos.rpp_folio ? `. RPP Folio: ${datos.rpp_folio}` : ''}`
-        : undefined,
+        : undefined),
+      restricciones_servidumbres: datos.restricciones_servidumbres || undefined,
+      medidas_colindancias: datos.medidas_colindancias || undefined,
+      uso_suelo_detectado: datos.uso_suelo_detectado || undefined,
+      edad_inmueble: datos.edad_inmueble ? Number(datos.edad_inmueble) : undefined,
+      tipo_inmueble_detectado: datos.tipo_inmueble_detectado || undefined,
+      valor_catastral: datos.valor_catastral ? Number(String(datos.valor_catastral).replace(/[^0-9.]/g, '')) : undefined,
       // Legacy fields (para compatibilidad)
       propietario_nombre: datos.propietario || undefined,
       clave_catastral: datos.clave_catastral || undefined,

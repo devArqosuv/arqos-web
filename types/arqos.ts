@@ -159,10 +159,17 @@ export interface CrearAvaluoPayload {
   notas?: string               // Notas de riesgo del evaluador
   // Campos SHF auto-llenados por IA
   propietario?: string
+  solicitante?: string
   cuenta_predial?: string
   regimen_propiedad?: string
   documentacion_analizada?: string
   situacion_legal?: string
+  restricciones_servidumbres?: string
+  medidas_colindancias?: string
+  uso_suelo_detectado?: string
+  edad_inmueble?: number
+  tipo_inmueble_detectado?: string
+  valor_catastral?: number
 }
 
 // ── Documento ──────────────────────────────────────────────
