@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/util/supabase/server';
+import { createRateLimiter } from '@/util/rate-limit';
+import { createLogger } from '@/util/logger';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'anthropic/claude-sonnet-4-5';
+
+const logger = createLogger('generar-contenido-redes');
+
+// 20 generaciones/hora por admin (no es caro pero evita bucle infinito)
+const rateLimit = createRateLimiter({
+  limit: 20,
+  windowMs: 60 * 60 * 1000,
+});
 
 type Plataforma = 'linkedin' | 'instagram' | 'facebook' | 'x' | 'tiktok';
 type Tono = 'profesional' | 'cercano' | 'educativo' | 'promocional';
@@ -64,7 +74,19 @@ export async function POST(req: NextRequest) {
       .eq('id', user.id)
       .single();
     if (perfil?.rol !== 'administrador') {
+      logger.warn('forbidden_role', { userId: user.id, rol: perfil?.rol });
       return NextResponse.json({ error: 'Acceso denegado.' }, { status: 403 });
+    }
+
+    // Rate limit por admin (previene abuso aún con auth)
+    const rl = rateLimit(user.id);
+    if (!rl.ok) {
+      const resetSeconds = Math.ceil(rl.resetMs / 1000);
+      logger.warn('rate_limit_exceeded', { userId: user.id, resetSeconds });
+      return NextResponse.json(
+        { error: 'rate_limit', resetInSeconds: resetSeconds, mensaje: `Límite alcanzado. Intenta en ${Math.ceil(resetSeconds / 60)} min.` },
+        { status: 429, headers: { 'Retry-After': String(resetSeconds) } },
+      );
     }
 
     const body = (await req.json()) as GenerarRequest;

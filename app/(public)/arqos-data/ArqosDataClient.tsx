@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { QuickEstimate } from '@/app/components/arqos-data/QuickEstimate';
 import { ChatRefine } from '@/app/components/arqos-data/ChatRefine';
+import { SolicitarInformeModal } from '@/app/components/arqos-data/SolicitarInformeModal';
 
 type Fase = 'formulario' | 'chat' | 'solicitar';
 
@@ -16,9 +17,18 @@ interface DatosEstimacion {
   ciudad: string;
 }
 
+interface LeadInfo { nombre: string; email: string; telefono: string }
+
 export function ArqosDataClient() {
   const [fase, setFase] = useState<Fase>('formulario');
   const [datosEstimacion, setDatosEstimacion] = useState<DatosEstimacion | null>(null);
+
+  // Datos necesarios para el modal de "Solicitar avalúo formal".
+  // - estimacionId es la fila en `estimaciones_portal` creada al capturar el lead.
+  // - lead son los campos ya tipeados por el cliente, los prellenamos al abrir el modal.
+  const [estimacionId, setEstimacionId] = useState<string | null>(null);
+  const [leadInfo, setLeadInfo] = useState<LeadInfo | null>(null);
+  const [modalSolicitarAbierto, setModalSolicitarAbierto] = useState(false);
 
   return (
     <section className="bg-arqos-white py-12 md:py-20 px-6">
@@ -38,8 +48,13 @@ export function ArqosDataClient() {
               setFase('chat');
             }}
             onSolicitar={(datos) => {
-              // Por ahora, redirigir al contacto de la landing
-              window.location.href = '/#contacto';
+              // El usuario pidió el avalúo formal: abrimos el modal de
+              // registro. Si no hay estimacion_id (p.ej. guardar falló),
+              // mostramos el modal igual pero el POST devolverá 404 y
+              // el modal mostrará el error.
+              setEstimacionId(datos.estimacionId);
+              setLeadInfo(datos.lead);
+              setModalSolicitarAbierto(true);
             }}
           />
         )}
@@ -57,6 +72,13 @@ export function ArqosDataClient() {
           />
         )}
       </AnimatePresence>
+
+      <SolicitarInformeModal
+        abierto={modalSolicitarAbierto}
+        onClose={() => setModalSolicitarAbierto(false)}
+        estimacionId={estimacionId}
+        defaults={leadInfo ?? undefined}
+      />
     </section>
   );
 }

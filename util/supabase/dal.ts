@@ -24,7 +24,7 @@ import { createClient } from '@/util/supabase/server';
 // (nunca retorna null — el llamador puede asumir que los datos existen).
 // ─────────────────────────────────────────────────────────────
 
-export type Rol = 'administrador' | 'controlador' | 'evaluador';
+export type Rol = 'administrador' | 'controlador' | 'evaluador' | 'cliente';
 
 export interface SesionVerificada {
   user: {
@@ -85,6 +85,7 @@ export async function requireRole(rolesPermitidos: Rol[]): Promise<SesionVerific
       administrador: '/dashboard/admin',
       controlador: '/dashboard/controlador',
       evaluador: '/dashboard/valuador',
+      cliente: '/dashboard/cliente',
     };
     redirect(destinoPorRol[sesion.perfil.rol] ?? '/login');
   }

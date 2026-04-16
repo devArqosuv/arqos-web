@@ -1,10 +1,14 @@
 'use client';
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles } from 'lucide-react';
 import { ResultCard } from './ResultCard';
 import { LeadCaptureModal } from './LeadCaptureModal';
+import { DireccionAutocomplete } from './DireccionAutocomplete';
+
+const MapaInmueble = dynamic(() => import('./MapaInmueble'), { ssr: false });
 
 const TIPOS = [
   { value: 'casa', label: 'Casa' },
@@ -27,13 +31,27 @@ interface EstimacionResult {
   riesgos?: string[];
 }
 
+interface LeadInfo { nombre: string; email: string; telefono: string }
+
 interface Props {
   onRefinar: (datos: { direccion: string; tipo: string; superficie: number; recamaras: number; resultado: EstimacionResult }) => void;
-  onSolicitar: (datos: { direccion: string; tipo: string; superficie: number; recamaras: number; valorEstimado: number }) => void;
+  // Al hacer click en "Solicitar avalúo formal" notifica al padre con el
+  // estimacion_id recién guardado en `estimaciones_portal` y el lead ya
+  // capturado, para que abra el modal de registro.
+  onSolicitar: (datos: {
+    direccion: string;
+    tipo: string;
+    superficie: number;
+    recamaras: number;
+    valorEstimado: number;
+    estimacionId: string | null;
+    lead: LeadInfo | null;
+  }) => void;
 }
 
 export function QuickEstimate({ onRefinar, onSolicitar }: Props) {
   const [direccion, setDireccion] = useState('');
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [tipo, setTipo] = useState('casa');
   const [superficie, setSuperficie] = useState(120);
   const [recamaras, setRecamaras] = useState<number>(3);
@@ -42,12 +60,29 @@ export function QuickEstimate({ onRefinar, onSolicitar }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<EstimacionResult | null>(null);
   const [leadCapturado, setLeadCapturado] = useState(false);
+  // Guardamos el id de la estimación y los datos del lead para poder
+  // enlazarlos con el expediente cuando el usuario pida avalúo formal.
+  const [estimacionId, setEstimacionId] = useState<string | null>(null);
+  const [leadInfo, setLeadInfo] = useState<LeadInfo | null>(null);
+
+  const handlePinMove = async (lat: number, lng: number) => {
+    setCoords({ lat, lng });
+    try {
+      const res = await fetch(`/api/mapbox/reverse?lat=${lat}&lng=${lng}`);
+      if (!res.ok) return;
+      const data = (await res.json()) as { features?: Array<{ place_name: string }> };
+      const place = data.features?.[0]?.place_name;
+      if (place) setDireccion(place);
+    } catch {
+      /* silently fail — user still has coordinates */
+    }
+  };
 
   const handleLeadSubmit = async (lead: { nombre: string; email: string; telefono: string }) => {
     if (!resultado) return;
     setSavingLead(true);
     try {
-      await fetch('/api/guardar-estimacion', {
+      const res = await fetch('/api/guardar-estimacion', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -66,6 +101,11 @@ export function QuickEstimate({ onRefinar, onSolicitar }: Props) {
           factores: resultado.factores,
         }),
       });
+      // Leer el id devuelto por /api/guardar-estimacion para poder
+      // enlazar el expediente de avaluo cuando el usuario pida avalúo formal.
+      const data = await res.json().catch(() => ({})) as { id?: string };
+      if (data?.id) setEstimacionId(data.id);
+      setLeadInfo(lead);
     } catch { /* silently continue — don't block the user */ }
     setSavingLead(false);
     setLeadCapturado(true);
@@ -84,7 +124,13 @@ export function QuickEstimate({ onRefinar, onSolicitar }: Props) {
       const res = await fetch('/api/estimar-valor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ direccion, tipo, superficie, recamaras }),
+        body: JSON.stringify({
+          direccion,
+          tipo,
+          superficie,
+          recamaras,
+          ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
+        }),
       });
 
       if (!res.ok) {
@@ -133,14 +179,32 @@ export function QuickEstimate({ onRefinar, onSolicitar }: Props) {
                   <label className="text-[10px] font-bold text-arqos-gray-500 uppercase tracking-wider block mb-2">
                     Dirección o zona
                   </label>
-                  <input
-                    type="text"
+                  <DireccionAutocomplete
                     value={direccion}
-                    onChange={(e) => setDireccion(e.target.value)}
+                    onChange={(v) => {
+                      setDireccion(v);
+                      // If user types a fresh address, invalidate any previous pin.
+                      if (coords) setCoords(null);
+                    }}
+                    onSelect={(place, lat, lng) => {
+                      setDireccion(place);
+                      setCoords({ lat, lng });
+                    }}
+                    onEnter={handleEstimar}
                     placeholder="Ej: Colonia del Valle, CDMX o Juriquilla, Querétaro"
-                    className="w-full px-4 py-3.5 bg-arqos-gray-100 border border-arqos-gray-200 rounded-xl text-sm text-arqos-black placeholder:text-arqos-gray-400 focus:ring-2 focus:ring-arqos-black focus:bg-white outline-none transition-all"
-                    onKeyDown={(e) => e.key === 'Enter' && handleEstimar()}
                   />
+                  {coords && (
+                    <div className="mt-3">
+                      <MapaInmueble
+                        lat={coords.lat}
+                        lng={coords.lng}
+                        onMove={handlePinMove}
+                      />
+                      <p className="text-[10px] text-arqos-gray-400 mt-2">
+                        Arrastra el pin para ajustar la ubicación exacta.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Tipo de inmueble */}
@@ -265,7 +329,15 @@ export function QuickEstimate({ onRefinar, onSolicitar }: Props) {
               factores={resultado.factores}
               datos={{ direccion, tipo, superficie, recamaras }}
               onRefinar={() => onRefinar({ direccion, tipo, superficie, recamaras, resultado })}
-              onSolicitar={() => onSolicitar({ direccion, tipo, superficie, recamaras, valorEstimado: resultado.valor_centro })}
+              onSolicitar={() => onSolicitar({
+                direccion,
+                tipo,
+                superficie,
+                recamaras,
+                valorEstimado: resultado.valor_centro,
+                estimacionId,
+                lead: leadInfo,
+              })}
             />
 
             {/* Botón volver */}

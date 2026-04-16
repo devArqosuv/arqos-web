@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/util/supabase/server';
 import * as XLSX from 'xlsx';
+import { createRateLimiter } from '@/util/rate-limit';
+import { createLogger } from '@/util/logger';
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MODEL = 'anthropic/claude-sonnet-4-5';
+
+const logger = createLogger('analizar-avaluo');
+
+// 15 análisis/hora por usuario — cada análisis es costoso (multimodal + multi-doc)
+const rateLimit = createRateLimiter({
+  limit: 15,
+  windowMs: 60 * 60 * 1000,
+});
 
 // Formato de contenido OpenAI-compatible usado por OpenRouter
 type ContentPart =
@@ -42,11 +52,40 @@ interface DocInput {
 }
 
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   try {
     if (!process.env.OPENROUTER_API_KEY) {
       return NextResponse.json(
         { error: 'OPENROUTER_API_KEY no está configurada en el servidor.' },
         { status: 500 }
+      );
+    }
+
+    // Autenticación: solo usuarios logueados con rol interno
+    const supabaseAuth = await createClient();
+    const { data: { user } } = await supabaseAuth.auth.getUser();
+    if (!user) {
+      logger.warn('unauthenticated');
+      return NextResponse.json({ error: 'No autenticado.' }, { status: 401 });
+    }
+    const { data: perfil } = await supabaseAuth
+      .from('perfiles')
+      .select('rol, activo')
+      .eq('id', user.id)
+      .single();
+    if (!perfil?.activo || !['evaluador', 'controlador', 'administrador'].includes(perfil.rol)) {
+      logger.warn('forbidden_role', { userId: user.id, rol: perfil?.rol });
+      return NextResponse.json({ error: 'Acceso denegado.' }, { status: 403 });
+    }
+
+    // Rate limit por usuario (análisis multimodal es costoso)
+    const rl = rateLimit(user.id);
+    if (!rl.ok) {
+      const resetSeconds = Math.ceil(rl.resetMs / 1000);
+      logger.warn('rate_limit_exceeded', { userId: user.id, resetSeconds });
+      return NextResponse.json(
+        { error: 'rate_limit', resetInSeconds: resetSeconds, mensaje: `Límite de análisis alcanzado. Intenta de nuevo en ${Math.ceil(resetSeconds / 60)} minutos.` },
+        { status: 429, headers: { 'Retry-After': String(resetSeconds) } },
       );
     }
 
@@ -59,6 +98,8 @@ export async function POST(req: NextRequest) {
 
     const { tipoAvaluo, documentos } = body;
 
+    logger.info('request_start', { userId: user.id, tipoAvaluo, numDocs: documentos?.length ?? 0 });
+
     if (!documentos || documentos.length === 0) {
       return NextResponse.json({ error: 'No se recibieron documentos.' }, { status: 400 });
     }
@@ -66,8 +107,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Tipo de avalúo inválido.' }, { status: 400 });
     }
 
-    // Descargar cada archivo desde Supabase Storage server-side
-    const supabase = await createClient();
+    // Reutilizamos el cliente autenticado del bloque de auth
+    const supabase = supabaseAuth;
 
     const docsDescargados = await Promise.all(
       documentos.map(async (doc) => {
@@ -522,10 +563,11 @@ REGLAS CRÍTICAS DE SALIDA:
       );
     }
 
+    logger.info('request_success', { userId: user.id, latencyMs: Date.now() - startedAt });
     return NextResponse.json(parsed, { status: 200 });
   } catch (error: unknown) {
-    console.error('Error en /api/analizar-avaluo:', error);
     const mensaje = error instanceof Error ? error.message : 'Error desconocido';
+    logger.error('unhandled_error', { error: mensaje, latencyMs: Date.now() - startedAt });
     return NextResponse.json(
       { error: 'Error interno del servidor: ' + mensaje },
       { status: 500 }

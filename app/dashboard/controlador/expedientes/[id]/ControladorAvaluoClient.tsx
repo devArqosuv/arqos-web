@@ -1,15 +1,20 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   agregarComparableAction,
   eliminarComparableAction,
-  generarPreavaluoAction,
   pasarAFirmaAction,
   devolverAPrevaluoAction,
   solicitarDocsFaltantesAction,
 } from '../actions';
+import {
+  guardarEnfoquesSHFAction,
+  generarPreavaluoSHFAction,
+  type EnfoquesSHFPayload,
+  type ComparableHomologacion,
+} from './actions';
 import { firmarUVAction, obtenerUrlPdfOficialAction } from '../../../firma/actions';
 
 interface Avaluo {
@@ -40,6 +45,24 @@ interface Avaluo {
   motivo_devolucion: string | null;
   devuelto_at: string | null;
   devoluciones_count: number;
+  // Enfoques SHF
+  valor_unitario: number | null;
+  valor_construcciones: number | null;
+  depreciacion: number | null;
+  valor_fisico_total: number | null;
+  investigacion_mercado: string | null;
+  rango_valores: string | null;
+  homologacion: string | null;
+  resultado_mercado: number | null;
+  cap_ingresos: number | null;
+  cap_tasa: number | null;
+  cap_valor: number | null;
+  conciliacion_comparacion: string | null;
+  conciliacion_ponderacion: string | null;
+  conciliacion_justificacion: string | null;
+  declaracion_alcance: string | null;
+  declaracion_supuestos: string | null;
+  declaracion_limitaciones: string | null;
 }
 
 interface Comparable {
@@ -80,6 +103,33 @@ interface Props {
   documentos: DocumentoConUrl[];
 }
 
+// Análisis IA de fotos (lectura desde Claude Vision)
+interface AnalisisFotosIAReadonly {
+  tipo_inmueble_observado?: string | null;
+  estado_conservacion?: string | null;
+  edad_aparente_anos?: number | null;
+  num_niveles_observados?: number | null;
+  materiales_fachada?: string | null;
+  materiales_cubiertas?: string | null;
+  calidad_acabados?: string | null;
+  instalaciones_visibles?: {
+    electricas?: string | null;
+    hidraulicas?: string | null;
+    gas?: boolean | null;
+    clima?: boolean | null;
+  } | null;
+  entorno_urbano?: {
+    tipo_zona?: string | null;
+    calidad_vialidad?: string | null;
+    infraestructura_visible?: string | null;
+    construccion_predominante?: string | null;
+  } | null;
+  factores_positivos?: string[] | null;
+  factores_negativos?: string[] | null;
+  observaciones_tecnicas?: string | null;
+  fotos_con_problemas?: Array<{ indice: number; problema: string }> | null;
+}
+
 const ESTADO_LABELS: Record<string, { label: string; bg: string; color: string }> = {
   solicitud:        { label: 'Solicitud',        bg: 'bg-blue-50 border-blue-200',     color: 'text-blue-700' },
   captura:          { label: 'Captura',          bg: 'bg-amber-50 border-amber-200',   color: 'text-amber-700' },
@@ -111,6 +161,40 @@ function fmt(val: number | null | undefined, moneda = 'MXN'): string {
   return `${moneda} $${Number(val).toLocaleString('es-MX')}`;
 }
 
+type TabSHF = 'fisico' | 'mercado' | 'ingresos' | 'conciliacion' | 'declaraciones';
+
+function parseHomologacion(raw: string | null): { texto: string; factores: ComparableHomologacion[] } {
+  if (!raw) return { texto: '', factores: [] };
+  const marker = '\n---FACTORES_JSON---\n';
+  const idx = raw.indexOf(marker);
+  if (idx === -1) return { texto: raw, factores: [] };
+  const texto = raw.slice(0, idx);
+  const json = raw.slice(idx + marker.length);
+  try {
+    const parsed = JSON.parse(json);
+    const factores = Array.isArray(parsed)
+      ? (parsed as ComparableHomologacion[])
+      : [];
+    return { texto, factores };
+  } catch {
+    return { texto, factores: [] };
+  }
+}
+
+function parsePonderacion(raw: string | null): { fisico: number; mercado: number; ingresos: number } {
+  if (!raw) return { fisico: 50, mercado: 50, ingresos: 0 };
+  try {
+    const p = JSON.parse(raw) as { fisico?: number; mercado?: number; ingresos?: number };
+    return {
+      fisico: Number(p.fisico ?? 50),
+      mercado: Number(p.mercado ?? 50),
+      ingresos: Number(p.ingresos ?? 0),
+    };
+  } catch {
+    return { fisico: 50, mercado: 50, ingresos: 0 };
+  }
+}
+
 export default function ControladorAvaluoClient({ avaluo, comparables, contadoresFotos, documentos }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -122,6 +206,105 @@ export default function ControladorAvaluoClient({ avaluo, comparables, contadore
   const [modalDocsFaltantes, setModalDocsFaltantes] = useState(false);
   const [motivoDocsFaltantes, setMotivoDocsFaltantes] = useState('');
 
+  // ── Análisis IA de fotos (lectura) ──────────────────────────
+  const [analisisIA, setAnalisisIA] = useState<AnalisisFotosIAReadonly | null>(null);
+  const [cargandoAnalisisIA, setCargandoAnalisisIA] = useState(false);
+  const [errorAnalisisIA, setErrorAnalisisIA] = useState<string | null>(null);
+
+  const totalFotosExpediente =
+    contadoresFotos.fachada + contadoresFotos.entorno + contadoresFotos.interior;
+
+  const verAnalisisIA = async () => {
+    setErrorAnalisisIA(null);
+    setCargandoAnalisisIA(true);
+    try {
+      const res = await fetch('/api/claude-vision/analizar-fotos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avaluo_id: avaluo.id }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setErrorAnalisisIA(json.error || 'No se pudo cargar el análisis.');
+      } else {
+        setAnalisisIA(json.analisis as AnalisisFotosIAReadonly);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Error de red';
+      setErrorAnalisisIA(msg);
+    } finally {
+      setCargandoAnalisisIA(false);
+    }
+  };
+
+  // ── Estado local de los 3 enfoques SHF ──────────────────────
+  const [tabActiva, setTabActiva] = useState<TabSHF>('fisico');
+
+  // Enfoque físico
+  const [valorUnitario, setValorUnitario] = useState<string>(
+    avaluo.valor_unitario != null ? String(avaluo.valor_unitario) : ''
+  );
+  const [valorConstrucciones, setValorConstrucciones] = useState<string>(
+    avaluo.valor_construcciones != null ? String(avaluo.valor_construcciones) : ''
+  );
+  const [depreciacion, setDepreciacion] = useState<string>(
+    avaluo.depreciacion != null ? String(avaluo.depreciacion) : ''
+  );
+  const [valorFisicoTotal, setValorFisicoTotal] = useState<string>(
+    avaluo.valor_fisico_total != null ? String(avaluo.valor_fisico_total) : ''
+  );
+  const [valorFisicoOverride, setValorFisicoOverride] = useState<boolean>(false);
+
+  // Enfoque de mercado
+  const homologacionParsed = useMemo(() => parseHomologacion(avaluo.homologacion), [avaluo.homologacion]);
+  const [investigacionMercado, setInvestigacionMercado] = useState<string>(avaluo.investigacion_mercado ?? '');
+  const [rangoValores, setRangoValores] = useState<string>(avaluo.rango_valores ?? '');
+  const [homologacionTexto, setHomologacionTexto] = useState<string>(homologacionParsed.texto);
+  const [resultadoMercado, setResultadoMercado] = useState<string>(
+    avaluo.resultado_mercado != null ? String(avaluo.resultado_mercado) : ''
+  );
+  const [resultadoMercadoOverride, setResultadoMercadoOverride] = useState<boolean>(false);
+  const [factoresPorComparable, setFactoresPorComparable] = useState<Record<string, ComparableHomologacion>>(() => {
+    const init: Record<string, ComparableHomologacion> = {};
+    for (const c of comparables) {
+      const existente = homologacionParsed.factores.find((f) => f.comparable_id === c.id);
+      init[c.id] = existente ?? {
+        comparable_id: c.id,
+        factor_ubicacion: 1,
+        factor_superficie: 1,
+        factor_edad: 1,
+        factor_conservacion: 1,
+      };
+    }
+    return init;
+  });
+
+  // Enfoque de ingresos
+  const [aplicaIngresos, setAplicaIngresos] = useState<boolean>(
+    avaluo.cap_ingresos != null || avaluo.cap_tasa != null || avaluo.cap_valor != null
+  );
+  const [capIngresos, setCapIngresos] = useState<string>(
+    avaluo.cap_ingresos != null ? String(avaluo.cap_ingresos) : ''
+  );
+  const [capTasa, setCapTasa] = useState<string>(
+    avaluo.cap_tasa != null ? String(avaluo.cap_tasa) : ''
+  );
+
+  // Conciliación
+  const pondInicial = useMemo(() => parsePonderacion(avaluo.conciliacion_ponderacion), [avaluo.conciliacion_ponderacion]);
+  const [pesoFisico, setPesoFisico] = useState<string>(String(pondInicial.fisico));
+  const [pesoMercado, setPesoMercado] = useState<string>(String(pondInicial.mercado));
+  const [pesoIngresos, setPesoIngresos] = useState<string>(String(pondInicial.ingresos));
+  const [conciliacionComparacion, setConciliacionComparacion] = useState<string>(avaluo.conciliacion_comparacion ?? '');
+  const [conciliacionJustificacion, setConciliacionJustificacion] = useState<string>(
+    avaluo.conciliacion_justificacion ?? ''
+  );
+
+  // Declaraciones
+  const [declaracionAlcance, setDeclaracionAlcance] = useState<string>(avaluo.declaracion_alcance ?? '');
+  const [declaracionSupuestos, setDeclaracionSupuestos] = useState<string>(avaluo.declaracion_supuestos ?? '');
+  const [declaracionLimitaciones, setDeclaracionLimitaciones] = useState<string>(avaluo.declaracion_limitaciones ?? '');
+
   const mostrarToast = (tipo: 'exito' | 'error', texto: string) => {
     setToast({ tipo, texto });
     setTimeout(() => setToast(null), 5000);
@@ -130,8 +313,9 @@ export default function ControladorAvaluoClient({ avaluo, comparables, contadore
   const estadoCfg = ESTADO_LABELS[avaluo.estado] || ESTADO_LABELS.solicitud;
   const direccion = `${avaluo.calle}${avaluo.colonia ? ', ' + avaluo.colonia : ''}, ${avaluo.municipio}, ${avaluo.estado_inmueble}`;
 
-  // Permite capturar comparables y generar preavalúo en estado visita_realizada
-  const puedeGestionarComparables = avaluo.estado === 'visita_realizada';
+  // Permite capturar comparables y gestionar enfoques en visita_realizada o preavaluo
+  const puedeGestionarComparables = avaluo.estado === 'visita_realizada' || avaluo.estado === 'preavaluo';
+  const puedeEditarEnfoquesSHF = avaluo.estado === 'visita_realizada' || avaluo.estado === 'preavaluo';
   const puedePasarAFirma = avaluo.estado === 'revision';
 
   // Cálculo de promedio actual de los comparables (solo para mostrar, no se guarda)
@@ -169,12 +353,153 @@ export default function ControladorAvaluoClient({ avaluo, comparables, contadore
     });
   };
 
-  const handleGenerarPreavaluo = () => {
+  // ── Cálculos derivados de los enfoques SHF ──────────────────
+  const valorFisicoCalculado = useMemo(() => {
+    const vc = parseFloat(valorConstrucciones);
+    const dep = parseFloat(depreciacion);
+    if (!Number.isFinite(vc) || vc <= 0) return null;
+    const depPct = Number.isFinite(dep) ? dep : 0;
+    return Math.round(vc * (1 - depPct / 100) * 100) / 100;
+  }, [valorConstrucciones, depreciacion]);
+
+  const valorFisicoFinal = useMemo(() => {
+    if (valorFisicoOverride) {
+      const vf = parseFloat(valorFisicoTotal);
+      return Number.isFinite(vf) && vf > 0 ? vf : null;
+    }
+    return valorFisicoCalculado;
+  }, [valorFisicoOverride, valorFisicoTotal, valorFisicoCalculado]);
+
+  const resultadoMercadoCalculado = useMemo(() => {
+    const sup = Number(avaluo.superficie_construccion || avaluo.superficie_terreno || 0);
+    if (sup <= 0) return null;
+    const preciosHomologados = comparables
+      .map((c) => {
+        const precioM2 = Number(c.precio_m2 ?? 0);
+        if (!precioM2 || precioM2 <= 0) return null;
+        const f = factoresPorComparable[c.id];
+        if (!f) return precioM2;
+        const factorResultante =
+          Number(f.factor_ubicacion || 1) *
+          Number(f.factor_superficie || 1) *
+          Number(f.factor_edad || 1) *
+          Number(f.factor_conservacion || 1);
+        return precioM2 * factorResultante;
+      })
+      .filter((v): v is number => v != null && Number.isFinite(v) && v > 0);
+    if (preciosHomologados.length === 0) return null;
+    const promedio = preciosHomologados.reduce((a, b) => a + b, 0) / preciosHomologados.length;
+    return Math.round(promedio * sup * 100) / 100;
+  }, [comparables, factoresPorComparable, avaluo.superficie_construccion, avaluo.superficie_terreno]);
+
+  const resultadoMercadoFinal = useMemo(() => {
+    if (resultadoMercadoOverride) {
+      const rm = parseFloat(resultadoMercado);
+      return Number.isFinite(rm) && rm > 0 ? rm : null;
+    }
+    return resultadoMercadoCalculado;
+  }, [resultadoMercadoOverride, resultadoMercado, resultadoMercadoCalculado]);
+
+  const capValor = useMemo(() => {
+    const ing = parseFloat(capIngresos);
+    const tasa = parseFloat(capTasa);
+    if (!Number.isFinite(ing) || ing <= 0) return null;
+    if (!Number.isFinite(tasa) || tasa <= 0) return null;
+    return Math.round((ing / (tasa / 100)) * 100) / 100;
+  }, [capIngresos, capTasa]);
+
+  const sumaPesos = useMemo(() => {
+    const f = parseFloat(pesoFisico) || 0;
+    const m = parseFloat(pesoMercado) || 0;
+    const i = aplicaIngresos ? parseFloat(pesoIngresos) || 0 : 0;
+    return f + m + i;
+  }, [pesoFisico, pesoMercado, pesoIngresos, aplicaIngresos]);
+
+  const valorConciliadoFinal = useMemo(() => {
+    if (Math.abs(sumaPesos - 100) > 0.01) return null;
+    const f = valorFisicoFinal ?? 0;
+    const m = resultadoMercadoFinal ?? 0;
+    const i = aplicaIngresos ? capValor ?? 0 : 0;
+    const pf = (parseFloat(pesoFisico) || 0) / 100;
+    const pm = (parseFloat(pesoMercado) || 0) / 100;
+    const pi = aplicaIngresos ? (parseFloat(pesoIngresos) || 0) / 100 : 0;
+    const total = f * pf + m * pm + i * pi;
+    if (!Number.isFinite(total) || total <= 0) return null;
+    return Math.round(total * 100) / 100;
+  }, [
+    sumaPesos,
+    valorFisicoFinal,
+    resultadoMercadoFinal,
+    capValor,
+    aplicaIngresos,
+    pesoFisico,
+    pesoMercado,
+    pesoIngresos,
+  ]);
+
+  const construirPayload = (): EnfoquesSHFPayload => ({
+    valor_unitario: parseFloat(valorUnitario) || null,
+    valor_construcciones: parseFloat(valorConstrucciones) || null,
+    depreciacion: parseFloat(depreciacion) || null,
+    valor_fisico_total: valorFisicoFinal,
+    investigacion_mercado: investigacionMercado.trim() || null,
+    rango_valores: rangoValores.trim() || null,
+    homologacion: homologacionTexto.trim() || null,
+    resultado_mercado: resultadoMercadoFinal,
+    factores_por_comparable: comparables
+      .map((c) => factoresPorComparable[c.id])
+      .filter((f): f is ComparableHomologacion => f != null),
+    aplica_ingresos: aplicaIngresos,
+    cap_ingresos: aplicaIngresos ? parseFloat(capIngresos) || null : null,
+    cap_tasa: aplicaIngresos ? parseFloat(capTasa) || null : null,
+    cap_valor: aplicaIngresos ? capValor : null,
+    conciliacion_comparacion: conciliacionComparacion.trim() || null,
+    conciliacion_ponderacion: {
+      fisico: parseFloat(pesoFisico) || 0,
+      mercado: parseFloat(pesoMercado) || 0,
+      ingresos: aplicaIngresos ? parseFloat(pesoIngresos) || 0 : 0,
+    },
+    conciliacion_justificacion: conciliacionJustificacion.trim() || null,
+    declaracion_alcance: declaracionAlcance.trim() || null,
+    declaracion_supuestos: declaracionSupuestos.trim() || null,
+    declaracion_limitaciones: declaracionLimitaciones.trim() || null,
+  });
+
+  const handleGuardarBorrador = () => {
     startTransition(async () => {
-      const res = await generarPreavaluoAction(avaluo.id);
+      const res = await guardarEnfoquesSHFAction(avaluo.id, construirPayload());
       mostrarToast(res.exito ? 'exito' : 'error', res.mensaje);
       if (res.exito) router.refresh();
     });
+  };
+
+  const handleGenerarPreavaluo = () => {
+    startTransition(async () => {
+      const res = await generarPreavaluoSHFAction(avaluo.id, construirPayload());
+      mostrarToast(res.exito ? 'exito' : 'error', res.mensaje);
+      if (res.exito) router.refresh();
+    });
+  };
+
+  const actualizarFactor = (
+    compId: string,
+    key: keyof Omit<ComparableHomologacion, 'comparable_id'>,
+    valor: string,
+  ) => {
+    const num = parseFloat(valor);
+    setFactoresPorComparable((prev) => ({
+      ...prev,
+      [compId]: {
+        ...(prev[compId] ?? {
+          comparable_id: compId,
+          factor_ubicacion: 1,
+          factor_superficie: 1,
+          factor_edad: 1,
+          factor_conservacion: 1,
+        }),
+        [key]: Number.isFinite(num) ? num : 1,
+      },
+    }));
   };
 
   const handlePasarAFirma = () => {
@@ -545,26 +870,598 @@ export default function ControladorAvaluoClient({ avaluo, comparables, contadore
         )}
       </section>
 
-      {/* Botón generar preavalúo (solo en visita_realizada con al menos 1 comparable) */}
-      {puedeGestionarComparables && comparables.length > 0 && (
-        <section className="bg-white rounded-2xl border-2 border-[#0F172A] shadow-md p-6 space-y-3">
-          <div>
-            <p className="text-[10px] font-bold text-cyan-600 uppercase tracking-widest mb-1">SIGUIENTE PASO</p>
-            <h2 className="text-lg font-black text-slate-900">Generar preavalúo</h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Se calculará el valor UV con el promedio de ${promedioM2?.toLocaleString('es-MX', { maximumFractionDigits: 2 })}/m²
-              {' '}× {superficie} m² = <span className="font-black text-slate-900">{fmt(valorUVEstimado, avaluo.moneda)}</span>.
-              El valuador recibirá este valor para que lo revise y ajuste si es necesario.
+      {/* ── ENFOQUES SHF — Tabs del preavalúo ────────────────────── */}
+      {puedeEditarEnfoquesSHF && (
+        <section className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100">
+            <p className="text-[10px] font-bold text-cyan-600 uppercase tracking-widest mb-1">
+              PREAVALÚO SHF
+            </p>
+            <h2 className="text-lg font-black text-slate-900">Enfoques valuatorios</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Captura los 3 enfoques SHF, concilia los valores y genera el preavalúo.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={handleGenerarPreavaluo}
-            disabled={pending || !valorUVEstimado}
-            className="w-full bg-[#0F172A] hover:bg-slate-700 disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 tracking-wider"
-          >
-            {pending ? 'GENERANDO…' : 'GENERAR PREAVALÚO Y ENVIAR AL VALUADOR'}
-          </button>
+
+          {/* Tabs */}
+          <div className="flex border-b border-slate-100 overflow-x-auto">
+            {([
+              ['fisico', '1. Físico / Costos'],
+              ['mercado', '2. Mercado'],
+              ['ingresos', '3. Ingresos'],
+              ['conciliacion', '4. Conciliación'],
+              ['declaraciones', '5. Declaraciones'],
+            ] as [TabSHF, string][]).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setTabActiva(key)}
+                className={`px-5 py-3 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap transition border-b-2 ${
+                  tabActiva === key
+                    ? 'text-[#0F172A] border-[#0F172A]'
+                    : 'text-slate-400 border-transparent hover:text-slate-700'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="p-6 space-y-5">
+            {/* ── Tab 1: Físico ──────────────────────────────── */}
+            {tabActiva === 'fisico' && (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                    ENFOQUE FÍSICO
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Calcula el valor de reposición de las construcciones menos la depreciación.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <CampoNumeroControlado
+                    label="Valor unitario (MXN/m² construcción)"
+                    valor={valorUnitario}
+                    onChange={setValorUnitario}
+                  />
+                  <CampoNumeroControlado
+                    label="Valor de construcciones (MXN) *"
+                    valor={valorConstrucciones}
+                    onChange={setValorConstrucciones}
+                  />
+                  <CampoNumeroControlado
+                    label="Depreciación (%) *"
+                    valor={depreciacion}
+                    onChange={setDepreciacion}
+                  />
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        Valor físico total (MXN)
+                      </label>
+                      <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500">
+                        <input
+                          type="checkbox"
+                          checked={valorFisicoOverride}
+                          onChange={(e) => {
+                            setValorFisicoOverride(e.target.checked);
+                            if (!e.target.checked) setValorFisicoTotal('');
+                          }}
+                          className="rounded border-slate-300"
+                        />
+                        Override manual
+                      </label>
+                    </div>
+                    <input
+                      type="number"
+                      step="0.01"
+                      disabled={!valorFisicoOverride}
+                      value={valorFisicoOverride ? valorFisicoTotal : (valorFisicoCalculado ?? '').toString()}
+                      onChange={(e) => setValorFisicoTotal(e.target.value)}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-slate-900 focus:bg-white outline-none disabled:text-slate-500"
+                    />
+                    <p className="text-[10px] text-slate-400">
+                      Cálculo: valor construcciones × (1 − depreciación%).
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                    VALOR FÍSICO RESULTANTE
+                  </p>
+                  <p className="text-2xl font-black text-slate-900">
+                    {valorFisicoFinal ? fmt(valorFisicoFinal, avaluo.moneda) : '—'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* ── Tab 2: Mercado ─────────────────────────────── */}
+            {tabActiva === 'mercado' && (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                    ENFOQUE DE MERCADO
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Homologa cada comparable con factores correctivos y calcula el valor promedio.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    Investigación de mercado
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={investigacionMercado}
+                    onChange={(e) => setInvestigacionMercado(e.target.value)}
+                    placeholder="Describe cómo se investigó el mercado: fuentes, fechas, zona, criterios de selección de comparables."
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:ring-2 focus:ring-slate-900 focus:bg-white outline-none resize-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      Rango de valores encontrados
+                    </label>
+                    <input
+                      type="text"
+                      value={rangoValores}
+                      onChange={(e) => setRangoValores(e.target.value)}
+                      placeholder="Ej: $15,000 – $22,000 /m²"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:ring-2 focus:ring-slate-900 focus:bg-white outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    Homologación aplicada (justificación)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={homologacionTexto}
+                    onChange={(e) => setHomologacionTexto(e.target.value)}
+                    placeholder="Justifica el método de homologación aplicado a los comparables."
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:ring-2 focus:ring-slate-900 focus:bg-white outline-none resize-none"
+                  />
+                </div>
+
+                {/* Tabla de homologación */}
+                {comparables.length > 0 ? (
+                  <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        <tr>
+                          <th className="px-3 py-2 text-left">Comparable</th>
+                          <th className="px-3 py-2 text-right">$/m²</th>
+                          <th className="px-3 py-2 text-right">F. ubic.</th>
+                          <th className="px-3 py-2 text-right">F. sup.</th>
+                          <th className="px-3 py-2 text-right">F. edad</th>
+                          <th className="px-3 py-2 text-right">F. cons.</th>
+                          <th className="px-3 py-2 text-right">F. result.</th>
+                          <th className="px-3 py-2 text-right">$/m² homol.</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {comparables.map((c) => {
+                          const f = factoresPorComparable[c.id] ?? {
+                            comparable_id: c.id,
+                            factor_ubicacion: 1,
+                            factor_superficie: 1,
+                            factor_edad: 1,
+                            factor_conservacion: 1,
+                          };
+                          const factorResultante =
+                            Number(f.factor_ubicacion || 1) *
+                            Number(f.factor_superficie || 1) *
+                            Number(f.factor_edad || 1) *
+                            Number(f.factor_conservacion || 1);
+                          const precioHomologado = Number(c.precio_m2 ?? 0) * factorResultante;
+                          return (
+                            <tr key={c.id}>
+                              <td className="px-3 py-2 truncate max-w-[160px]">
+                                <p className="text-xs font-semibold text-slate-700 truncate">
+                                  {c.calle || c.municipio}
+                                </p>
+                                <p className="text-[10px] text-slate-400 truncate">
+                                  {c.colonia || c.municipio}
+                                </p>
+                              </td>
+                              <td className="px-3 py-2 text-right font-bold text-slate-900">
+                                {c.precio_m2 ? `$${Number(c.precio_m2).toLocaleString('es-MX')}` : '—'}
+                              </td>
+                              <td className="px-3 py-2">
+                                <InputFactor
+                                  valor={f.factor_ubicacion}
+                                  onChange={(v) => actualizarFactor(c.id, 'factor_ubicacion', v)}
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <InputFactor
+                                  valor={f.factor_superficie}
+                                  onChange={(v) => actualizarFactor(c.id, 'factor_superficie', v)}
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <InputFactor
+                                  valor={f.factor_edad}
+                                  onChange={(v) => actualizarFactor(c.id, 'factor_edad', v)}
+                                />
+                              </td>
+                              <td className="px-3 py-2">
+                                <InputFactor
+                                  valor={f.factor_conservacion}
+                                  onChange={(v) => actualizarFactor(c.id, 'factor_conservacion', v)}
+                                />
+                              </td>
+                              <td className="px-3 py-2 text-right text-xs font-bold text-slate-700">
+                                {factorResultante.toFixed(4)}
+                              </td>
+                              <td className="px-3 py-2 text-right text-xs font-black text-slate-900">
+                                ${precioHomologado.toLocaleString('es-MX', { maximumFractionDigits: 0 })}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-700">
+                    Captura al menos 1 comparable arriba para poder homologar.
+                  </div>
+                )}
+
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                      VALOR DE MERCADO (RESULTADO)
+                    </p>
+                    <p className="text-2xl font-black text-slate-900">
+                      {resultadoMercadoFinal ? fmt(resultadoMercadoFinal, avaluo.moneda) : '—'}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Promedio precios homologados × {superficie ?? '—'} m².
+                    </p>
+                  </div>
+                  <div className="w-48 space-y-1">
+                    <label className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500">
+                      <input
+                        type="checkbox"
+                        checked={resultadoMercadoOverride}
+                        onChange={(e) => {
+                          setResultadoMercadoOverride(e.target.checked);
+                          if (!e.target.checked) setResultadoMercado('');
+                        }}
+                        className="rounded border-slate-300"
+                      />
+                      Override manual
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      disabled={!resultadoMercadoOverride}
+                      value={resultadoMercadoOverride ? resultadoMercado : (resultadoMercadoCalculado ?? '').toString()}
+                      onChange={(e) => setResultadoMercado(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-900 focus:ring-2 focus:ring-slate-900 outline-none disabled:text-slate-500 disabled:bg-slate-100"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Tab 3: Ingresos ─────────────────────────────── */}
+            {tabActiva === 'ingresos' && (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                    ENFOQUE DE CAPITALIZACIÓN
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Solo aplica para propiedades en renta o con potencial de rentabilidad.
+                  </p>
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={aplicaIngresos}
+                    onChange={(e) => setAplicaIngresos(e.target.checked)}
+                    className="rounded border-slate-300 w-4 h-4"
+                  />
+                  <span className="text-xs font-bold text-slate-700">
+                    Aplica enfoque de ingresos para esta propiedad
+                  </span>
+                </label>
+
+                {aplicaIngresos ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <CampoNumeroControlado
+                        label="Ingreso bruto anual (MXN)"
+                        valor={capIngresos}
+                        onChange={setCapIngresos}
+                      />
+                      <CampoNumeroControlado
+                        label="Tasa de capitalización (%)"
+                        valor={capTasa}
+                        onChange={setCapTasa}
+                      />
+                    </div>
+
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                        VALOR POR CAPITALIZACIÓN
+                      </p>
+                      <p className="text-2xl font-black text-slate-900">
+                        {capValor ? fmt(capValor, avaluo.moneda) : '—'}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Cálculo: ingreso bruto ÷ (tasa / 100).
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500">
+                    Este enfoque no se aplicará al preavalúo.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Tab 4: Conciliación ────────────────────────── */}
+            {tabActiva === 'conciliacion' && (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                    CONCILIACIÓN DE VALORES
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Asigna un peso a cada enfoque (deben sumar 100%). El valor UV se calcula con suma ponderada.
+                  </p>
+                </div>
+
+                <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      <tr>
+                        <th className="px-4 py-2 text-left">Enfoque</th>
+                        <th className="px-4 py-2 text-right">Valor</th>
+                        <th className="px-4 py-2 text-right">Peso (%)</th>
+                        <th className="px-4 py-2 text-right">Aporte</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      <tr>
+                        <td className="px-4 py-2 font-bold text-slate-700">1. Físico</td>
+                        <td className="px-4 py-2 text-right font-bold">
+                          {valorFisicoFinal ? fmt(valorFisicoFinal, avaluo.moneda) : '—'}
+                        </td>
+                        <td className="px-4 py-2">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="100"
+                            value={pesoFisico}
+                            onChange={(e) => setPesoFisico(e.target.value)}
+                            className="w-20 px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs text-right focus:ring-2 focus:ring-slate-900 outline-none"
+                          />
+                        </td>
+                        <td className="px-4 py-2 text-right font-semibold text-slate-600">
+                          {valorFisicoFinal && pesoFisico
+                            ? fmt(
+                                Math.round(valorFisicoFinal * (parseFloat(pesoFisico) / 100) * 100) / 100,
+                                avaluo.moneda
+                              )
+                            : '—'}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-2 font-bold text-slate-700">2. Mercado</td>
+                        <td className="px-4 py-2 text-right font-bold">
+                          {resultadoMercadoFinal ? fmt(resultadoMercadoFinal, avaluo.moneda) : '—'}
+                        </td>
+                        <td className="px-4 py-2">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="100"
+                            value={pesoMercado}
+                            onChange={(e) => setPesoMercado(e.target.value)}
+                            className="w-20 px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs text-right focus:ring-2 focus:ring-slate-900 outline-none"
+                          />
+                        </td>
+                        <td className="px-4 py-2 text-right font-semibold text-slate-600">
+                          {resultadoMercadoFinal && pesoMercado
+                            ? fmt(
+                                Math.round(resultadoMercadoFinal * (parseFloat(pesoMercado) / 100) * 100) / 100,
+                                avaluo.moneda
+                              )
+                            : '—'}
+                        </td>
+                      </tr>
+                      {aplicaIngresos && (
+                        <tr>
+                          <td className="px-4 py-2 font-bold text-slate-700">3. Ingresos</td>
+                          <td className="px-4 py-2 text-right font-bold">
+                            {capValor ? fmt(capValor, avaluo.moneda) : '—'}
+                          </td>
+                          <td className="px-4 py-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max="100"
+                              value={pesoIngresos}
+                              onChange={(e) => setPesoIngresos(e.target.value)}
+                              className="w-20 px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs text-right focus:ring-2 focus:ring-slate-900 outline-none"
+                            />
+                          </td>
+                          <td className="px-4 py-2 text-right font-semibold text-slate-600">
+                            {capValor && pesoIngresos
+                              ? fmt(
+                                  Math.round(capValor * (parseFloat(pesoIngresos) / 100) * 100) / 100,
+                                  avaluo.moneda
+                                )
+                              : '—'}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-slate-50">
+                        <td className="px-4 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest" colSpan={2}>
+                          Suma de pesos
+                        </td>
+                        <td
+                          className={`px-4 py-2 text-right font-black ${
+                            Math.abs(sumaPesos - 100) < 0.01 ? 'text-emerald-600' : 'text-red-600'
+                          }`}
+                        >
+                          {sumaPesos.toFixed(2)}%
+                        </td>
+                        <td className="px-4 py-2 text-right font-black text-slate-900">
+                          {valorConciliadoFinal ? fmt(valorConciliadoFinal, avaluo.moneda) : '—'}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    Tabla comparativa / notas (markdown permitido)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={conciliacionComparacion}
+                    onChange={(e) => setConciliacionComparacion(e.target.value)}
+                    placeholder="Opcional: tabla markdown o comentarios sobre la comparación de los 3 enfoques."
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:ring-2 focus:ring-slate-900 focus:bg-white outline-none resize-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    Justificación de la ponderación *
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={conciliacionJustificacion}
+                    onChange={(e) => setConciliacionJustificacion(e.target.value)}
+                    placeholder="Explica por qué asignaste esos pesos (mín. 10 caracteres)."
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:ring-2 focus:ring-slate-900 focus:bg-white outline-none resize-none"
+                  />
+                </div>
+
+                <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-5">
+                  <p className="text-[10px] font-bold text-cyan-300 uppercase tracking-widest mb-1">
+                    VALOR UV CONCILIADO (FINAL)
+                  </p>
+                  <p className="text-3xl font-black">
+                    {valorConciliadoFinal ? fmt(valorConciliadoFinal, avaluo.moneda) : '—'}
+                  </p>
+                  {Math.abs(sumaPesos - 100) > 0.01 && (
+                    <p className="text-[10px] text-amber-300 mt-1 font-bold">
+                      ⚠ Los pesos deben sumar exactamente 100% para calcular el valor final.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── Tab 5: Declaraciones ───────────────────────── */}
+            {tabActiva === 'declaraciones' && (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+                    DECLARACIONES SHF
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Textos obligatorios según las Reglas de Carácter General para las Unidades de Valuación (SHF).
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    Alcance del avalúo
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={declaracionAlcance}
+                    onChange={(e) => setDeclaracionAlcance(e.target.value)}
+                    placeholder="Ej: El presente avalúo tiene por objeto determinar el valor comercial del inmueble referido, conforme a las Reglas de Carácter General de la SHF..."
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:ring-2 focus:ring-slate-900 focus:bg-white outline-none resize-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    Supuestos considerados
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={declaracionSupuestos}
+                    onChange={(e) => setDeclaracionSupuestos(e.target.value)}
+                    placeholder="Ej: Se asume que la documentación aportada por el solicitante es auténtica y que el inmueble se encuentra libre de gravámenes distintos a los descritos..."
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:ring-2 focus:ring-slate-900 focus:bg-white outline-none resize-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                    Limitaciones del avalúo
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={declaracionLimitaciones}
+                    onChange={(e) => setDeclaracionLimitaciones(e.target.value)}
+                    placeholder="Ej: El avalúo no contempla inspección estructural ni análisis de instalaciones ocultas. La vigencia es de 6 meses conforme a la normativa SHF..."
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:ring-2 focus:ring-slate-900 focus:bg-white outline-none resize-none"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Acciones: Guardar borrador + Generar preavalúo */}
+          <div className="bg-slate-50 border-t border-slate-100 px-6 py-4 flex gap-3">
+            <button
+              type="button"
+              onClick={handleGuardarBorrador}
+              disabled={pending}
+              className="flex-1 py-3 border-2 border-slate-300 text-slate-700 rounded-xl text-xs font-bold hover:bg-white transition tracking-widest"
+            >
+              {pending ? 'GUARDANDO…' : 'GUARDAR BORRADOR'}
+            </button>
+            <button
+              type="button"
+              onClick={handleGenerarPreavaluo}
+              disabled={pending}
+              className="flex-1 py-3 bg-[#0F172A] hover:bg-slate-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl text-xs font-bold transition tracking-widest"
+            >
+              {pending
+                ? 'GENERANDO…'
+                : avaluo.estado === 'visita_realizada'
+                  ? 'GENERAR PREAVALÚO Y ENVIAR AL VALUADOR'
+                  : 'RECALCULAR PREAVALÚO'}
+            </button>
+          </div>
+
+          {/* Resumen preview en visita_realizada con promedio simple (legacy) */}
+          {avaluo.estado === 'visita_realizada' && valorUVEstimado && !valorConciliadoFinal && (
+            <div className="bg-amber-50 border-t border-amber-200 px-6 py-3 text-[10px] text-amber-700">
+              Referencia sin homologación: promedio simple = {fmt(valorUVEstimado, avaluo.moneda)}.
+            </div>
+          )}
         </section>
       )}
 
@@ -721,6 +1618,54 @@ export default function ControladorAvaluoClient({ avaluo, comparables, contadore
               className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-200 disabled:text-amber-400 text-white rounded-xl text-xs font-bold transition"
             >
               {pending ? 'DEVOLVIENDO…' : '↩ DEVOLVER AL VALUADOR'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Análisis IA de fotos — solo lectura para controlador */}
+      {totalFotosExpediente >= 4 && (
+        <section className="bg-white rounded-2xl border border-purple-200 shadow-sm p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-bold text-purple-600 uppercase tracking-widest">
+                ✨ Análisis IA de fotos
+              </p>
+              <h3 className="text-base font-black text-slate-900 mt-0.5">
+                Ver análisis con Claude Vision
+              </h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Analiza las fotos de visita con IA y obtén estado de conservación, entorno urbano, factores y observaciones técnicas. Solo lectura.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={verAnalisisIA}
+              disabled={cargandoAnalisisIA}
+              className="shrink-0 bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-700 hover:to-fuchsia-700 disabled:from-slate-200 disabled:to-slate-200 disabled:text-slate-400 text-white text-[11px] font-bold px-4 py-2.5 rounded-xl transition tracking-wider shadow-sm"
+            >
+              {cargandoAnalisisIA ? 'ANALIZANDO…' : 'VER ANÁLISIS IA'}
+            </button>
+          </div>
+          {errorAnalisisIA && (
+            <p className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {errorAnalisisIA}
+            </p>
+          )}
+        </section>
+      )}
+
+      {/* MODAL: análisis IA solo lectura */}
+      {analisisIA && (
+        <Modal titulo="✨ Análisis IA de fotos (solo lectura)" onClose={() => setAnalisisIA(null)}>
+          <AnalisisFotosReadonly analisis={analisisIA} />
+          <div className="pt-4 mt-4 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setAnalisisIA(null)}
+              className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition"
+            >
+              CERRAR
             </button>
           </div>
         </Modal>
@@ -922,5 +1867,183 @@ function CampoSelect({
         ))}
       </select>
     </div>
+  );
+}
+
+// ── Vista de análisis IA (solo lectura, para controlador) ─────────────
+function AnalisisFotosReadonly({ analisis }: { analisis: AnalisisFotosIAReadonly }) {
+  const valor = (v: unknown) => (v == null || v === '' ? '—' : String(v));
+  return (
+    <div className="space-y-5 text-xs max-h-[65vh] overflow-y-auto pr-1">
+      <div className="grid grid-cols-2 gap-3">
+        <InfoReadonly label="Tipo de inmueble" value={valor(analisis.tipo_inmueble_observado)} />
+        <InfoReadonly label="Estado de conservación" value={valor(analisis.estado_conservacion)} highlight />
+        <InfoReadonly label="Edad aparente (años)" value={valor(analisis.edad_aparente_anos)} />
+        <InfoReadonly label="Niveles observados" value={valor(analisis.num_niveles_observados)} />
+        <InfoReadonly label="Calidad de acabados" value={valor(analisis.calidad_acabados)} />
+        <InfoReadonly label="Materiales de fachada" value={valor(analisis.materiales_fachada)} />
+        <InfoReadonly label="Materiales de cubiertas" value={valor(analisis.materiales_cubiertas)} />
+      </div>
+
+      {analisis.instalaciones_visibles && (
+        <div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
+            Instalaciones visibles
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <InfoReadonly label="Eléctricas" value={valor(analisis.instalaciones_visibles.electricas)} />
+            <InfoReadonly label="Hidráulicas" value={valor(analisis.instalaciones_visibles.hidraulicas)} />
+            <InfoReadonly label="Gas" value={analisis.instalaciones_visibles.gas ? 'Sí' : 'No'} />
+            <InfoReadonly label="Clima" value={analisis.instalaciones_visibles.clima ? 'Sí' : 'No'} />
+          </div>
+        </div>
+      )}
+
+      {analisis.entorno_urbano && (
+        <div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
+            Entorno urbano
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <InfoReadonly label="Tipo de zona" value={valor(analisis.entorno_urbano.tipo_zona)} highlight />
+            <InfoReadonly label="Calidad de vialidad" value={valor(analisis.entorno_urbano.calidad_vialidad)} />
+            <InfoReadonly
+              label="Infraestructura visible"
+              value={valor(analisis.entorno_urbano.infraestructura_visible)}
+            />
+            <InfoReadonly
+              label="Construcción predominante"
+              value={valor(analisis.entorno_urbano.construccion_predominante)}
+              highlight
+            />
+          </div>
+        </div>
+      )}
+
+      {(analisis.factores_positivos?.length || analisis.factores_negativos?.length) && (
+        <div className="grid grid-cols-2 gap-3">
+          {analisis.factores_positivos && analisis.factores_positivos.length > 0 && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+              <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest mb-1">
+                Factores positivos
+              </p>
+              <ul className="list-disc list-inside text-[11px] text-emerald-900 space-y-0.5">
+                {analisis.factores_positivos.map((f, i) => (
+                  <li key={i}>{f}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {analisis.factores_negativos && analisis.factores_negativos.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-1">
+                Factores negativos
+              </p>
+              <ul className="list-disc list-inside text-[11px] text-amber-900 space-y-0.5">
+                {analisis.factores_negativos.map((f, i) => (
+                  <li key={i}>{f}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {analisis.observaciones_tecnicas && (
+        <div>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+            Observaciones técnicas
+          </p>
+          <p className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-xl p-3 leading-relaxed">
+            {analisis.observaciones_tecnicas}
+          </p>
+        </div>
+      )}
+
+      {analisis.fotos_con_problemas && analisis.fotos_con_problemas.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+          <p className="text-[10px] font-bold text-red-700 uppercase tracking-widest mb-1">
+            Fotos con problemas detectadas
+          </p>
+          <ul className="text-[11px] text-red-900 space-y-0.5">
+            {analisis.fotos_con_problemas.map((f, i) => (
+              <li key={i}>
+                Foto #{f.indice}: {f.problema}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InfoReadonly({
+  label,
+  value,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-xl border px-3 py-2 ${
+        highlight ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-200'
+      }`}
+    >
+      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{label}</p>
+      <p
+        className={`text-xs font-bold mt-0.5 capitalize ${
+          highlight ? 'text-purple-900' : 'text-slate-800'
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function CampoNumeroControlado({
+  label,
+  valor,
+  onChange,
+}: {
+  label: string;
+  valor: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</label>
+      <input
+        type="number"
+        step="0.01"
+        min="0"
+        value={valor}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:ring-2 focus:ring-slate-900 focus:bg-white outline-none"
+      />
+    </div>
+  );
+}
+
+function InputFactor({
+  valor,
+  onChange,
+}: {
+  valor: number;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <input
+      type="number"
+      step="0.01"
+      min="0"
+      value={valor}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-16 px-2 py-1 bg-white border border-slate-200 rounded-lg text-[11px] text-right font-semibold text-slate-700 focus:ring-2 focus:ring-slate-900 outline-none"
+    />
   );
 }

@@ -18,6 +18,8 @@ interface EstimacionRequest {
   superficie: number;
   recamaras: number;
   ciudad?: string;
+  lat?: number;
+  lng?: number;
 }
 
 export async function POST(req: NextRequest) {
@@ -44,18 +46,28 @@ export async function POST(req: NextRequest) {
     }
 
     const body = (await req.json()) as EstimacionRequest;
-    const { direccion, tipo, superficie, recamaras } = body;
+    const { direccion, tipo, superficie, recamaras, lat, lng } = body;
 
     if (!direccion || !tipo || !superficie) {
       return NextResponse.json({ error: 'Faltan campos requeridos.' }, { status: 400 });
     }
 
-    logger.info('request_start', { ip, tipo, superficie, recamaras });
+    const hasCoords =
+      typeof lat === 'number' &&
+      typeof lng === 'number' &&
+      Number.isFinite(lat) &&
+      Number.isFinite(lng);
+
+    logger.info('request_start', { ip, tipo, superficie, recamaras, hasCoords });
+
+    const coordsLine = hasCoords
+      ? `\n- Coordenadas GPS (ubicación exacta): ${lat}, ${lng}`
+      : '';
 
     const prompt = `Eres un valuador inmobiliario experto en México con acceso a datos de mercado actualizados a 2026.
 
 Se te pide estimar el valor de mercado de un inmueble con estas características:
-- Dirección / Zona: ${direccion}
+- Dirección / Zona: ${direccion}${coordsLine}
 - Tipo de inmueble: ${tipo}
 - Superficie de construcción: ${superficie} m²
 - Recámaras: ${recamaras}

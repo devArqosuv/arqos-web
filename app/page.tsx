@@ -19,5 +19,6 @@ export default async function RootPage() {
 
   if (perfil?.rol === 'administrador') redirect('/dashboard/admin');
   if (perfil?.rol === 'controlador') redirect('/dashboard/controlador');
+  if (perfil?.rol === 'cliente') redirect('/dashboard/cliente');
   redirect('/dashboard/valuador');
 }

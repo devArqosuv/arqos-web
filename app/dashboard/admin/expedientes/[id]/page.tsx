@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { createClient } from '@/util/supabase/server';
 import { requireRole } from '@/util/supabase/dal';
 import ControladorAvaluoClient from '@/app/dashboard/controlador/expedientes/[id]/ControladorAvaluoClient';
+import ValidacionSHFPanel from './ValidacionSHFPanel';
 
 export default async function AdminAvaluoDetailPage({
   params,
@@ -24,7 +25,12 @@ export default async function AdminAvaluoDetailPage({
       firmado_uv, firmado_valuador, fecha_firma_uv, fecha_firma_valuador,
       pdf_oficial_path,
       motivo_devolucion, devuelto_at, devoluciones_count,
-      controlador_id
+      controlador_id,
+      valor_unitario, valor_construcciones, depreciacion, valor_fisico_total,
+      investigacion_mercado, rango_valores, homologacion, resultado_mercado,
+      cap_ingresos, cap_tasa, cap_valor,
+      conciliacion_comparacion, conciliacion_ponderacion, conciliacion_justificacion,
+      declaracion_alcance, declaracion_supuestos, declaracion_limitaciones
     `)
     .eq('id', id)
     .single();
@@ -76,6 +82,7 @@ export default async function AdminAvaluoDetailPage({
             ← Volver al panel admin
           </Link>
         </div>
+        <ValidacionSHFPanel avaluoId={avaluo.id} estado={avaluo.estado} />
         <ControladorAvaluoClient
           documentos={documentos}
           avaluo={{
@@ -106,6 +113,26 @@ export default async function AdminAvaluoDetailPage({
             motivo_devolucion: (avaluo as { motivo_devolucion: string | null }).motivo_devolucion ?? null,
             devuelto_at: (avaluo as { devuelto_at: string | null }).devuelto_at ?? null,
             devoluciones_count: (avaluo as { devoluciones_count: number | null }).devoluciones_count ?? 0,
+            // Enfoques SHF
+            valor_unitario: (avaluo as { valor_unitario: number | null }).valor_unitario ?? null,
+            valor_construcciones: (avaluo as { valor_construcciones: number | null }).valor_construcciones ?? null,
+            depreciacion: (avaluo as { depreciacion: number | null }).depreciacion ?? null,
+            valor_fisico_total: (avaluo as { valor_fisico_total: number | null }).valor_fisico_total ?? null,
+            investigacion_mercado: (avaluo as { investigacion_mercado: string | null }).investigacion_mercado ?? null,
+            rango_valores: (avaluo as { rango_valores: string | null }).rango_valores ?? null,
+            homologacion: (avaluo as { homologacion: string | null }).homologacion ?? null,
+            resultado_mercado: (avaluo as { resultado_mercado: string | number | null }).resultado_mercado != null
+              ? Number((avaluo as { resultado_mercado: string | number | null }).resultado_mercado)
+              : null,
+            cap_ingresos: (avaluo as { cap_ingresos: number | null }).cap_ingresos ?? null,
+            cap_tasa: (avaluo as { cap_tasa: number | null }).cap_tasa ?? null,
+            cap_valor: (avaluo as { cap_valor: number | null }).cap_valor ?? null,
+            conciliacion_comparacion: (avaluo as { conciliacion_comparacion: string | null }).conciliacion_comparacion ?? null,
+            conciliacion_ponderacion: (avaluo as { conciliacion_ponderacion: string | null }).conciliacion_ponderacion ?? null,
+            conciliacion_justificacion: (avaluo as { conciliacion_justificacion: string | null }).conciliacion_justificacion ?? null,
+            declaracion_alcance: (avaluo as { declaracion_alcance: string | null }).declaracion_alcance ?? null,
+            declaracion_supuestos: (avaluo as { declaracion_supuestos: string | null }).declaracion_supuestos ?? null,
+            declaracion_limitaciones: (avaluo as { declaracion_limitaciones: string | null }).declaracion_limitaciones ?? null,
           }}
           comparables={comparablesRaw ?? []}
           contadoresFotos={contadores}

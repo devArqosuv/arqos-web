@@ -333,3 +333,63 @@ export async function ajustarYEnviarRevisionAction(
     return { exito: false, mensaje: msg };
   }
 }
+
+// ────────────────────────────────────────────────────────────
+// APLICAR ANÁLISIS DE FOTOS IA (Claude Vision)
+//
+// Recibe los campos ya aprobados por el valuador (tras haberlos revisado
+// en el modal) y los guarda en la tabla avaluos. Solo se escriben los
+// campos que tienen valor (no null / no vacíos).
+// ────────────────────────────────────────────────────────────
+export async function aplicarAnalisisFotosAction(
+  avaluoId: string,
+  campos: {
+    estado_conservacion?: string | null;
+    construccion_predominante?: string | null;
+    tipo_zona?: string | null;
+    observaciones?: string | null; // se agrega a notas
+  },
+): Promise<Resultado> {
+  try {
+    await asegurarPropietarioAvaluo(avaluoId);
+    const supabase = await createClient();
+
+    const updates: Record<string, string> = {};
+    if (campos.estado_conservacion) updates.estado_conservacion = campos.estado_conservacion;
+    if (campos.construccion_predominante) updates.construccion_predominante = campos.construccion_predominante;
+    if (campos.tipo_zona) updates.tipo_zona = campos.tipo_zona;
+
+    // Si trae observaciones, agrégalas al campo notas (sin sobrescribir lo previo)
+    if (campos.observaciones && campos.observaciones.trim()) {
+      const { data: actual } = await supabase
+        .from('avaluos')
+        .select('notas')
+        .eq('id', avaluoId)
+        .single();
+
+      const prefijo = actual?.notas ? `${actual.notas}\n\n` : '';
+      updates.notas = `${prefijo}[Análisis IA de fotos] ${campos.observaciones.trim()}`;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return { exito: false, mensaje: 'No hay campos para aplicar.' };
+    }
+
+    const { error: errUpdate } = await supabase
+      .from('avaluos')
+      .update(updates)
+      .eq('id', avaluoId);
+
+    if (errUpdate) {
+      return { exito: false, mensaje: `Error al guardar: ${errUpdate.message}` };
+    }
+
+    revalidatePath(`/dashboard/valuador/expedientes/${avaluoId}`);
+    revalidatePath(`/dashboard/controlador/expedientes/${avaluoId}`);
+
+    return { exito: true, mensaje: 'Análisis aplicado al expediente.' };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Error desconocido';
+    return { exito: false, mensaje: msg };
+  }
+}

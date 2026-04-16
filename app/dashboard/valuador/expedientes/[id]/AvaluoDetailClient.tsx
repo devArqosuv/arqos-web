@@ -6,6 +6,7 @@ import {
   agendarVisitaAction,
   subirFotosVisitaAction,
   ajustarYEnviarRevisionAction,
+  aplicarAnalisisFotosAction,
 } from '../actions';
 import { firmarValuadorAction, obtenerUrlPdfOficialAction } from '../../../firma/actions';
 
@@ -114,6 +115,35 @@ interface Props {
   }[];
 }
 
+// ─────────────────────────────────────────────────────────
+// Análisis IA de fotos (Claude Vision)
+// ─────────────────────────────────────────────────────────
+export interface AnalisisFotosIA {
+  tipo_inmueble_observado?: string | null;
+  estado_conservacion?: string | null;
+  edad_aparente_anos?: number | null;
+  num_niveles_observados?: number | null;
+  materiales_fachada?: string | null;
+  materiales_cubiertas?: string | null;
+  calidad_acabados?: string | null;
+  instalaciones_visibles?: {
+    electricas?: string | null;
+    hidraulicas?: string | null;
+    gas?: boolean | null;
+    clima?: boolean | null;
+  } | null;
+  entorno_urbano?: {
+    tipo_zona?: string | null;
+    calidad_vialidad?: string | null;
+    infraestructura_visible?: string | null;
+    construccion_predominante?: string | null;
+  } | null;
+  factores_positivos?: string[] | null;
+  factores_negativos?: string[] | null;
+  observaciones_tecnicas?: string | null;
+  fotos_con_problemas?: Array<{ indice: number; problema: string }> | null;
+}
+
 const ESTADO_LABELS: Record<string, { label: string; bg: string; color: string }> = {
   solicitud:        { label: 'Solicitud',        bg: 'bg-blue-50 border-blue-200',     color: 'text-blue-700' },
   captura:          { label: 'Captura',          bg: 'bg-amber-50 border-amber-200',   color: 'text-amber-700' },
@@ -185,6 +215,11 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos, documentos
       return prev.filter((_, idx) => idx !== i);
     });
   };
+
+  // Análisis de fotos con Claude Vision (solo en visita_realizada)
+  const [analizando, setAnalizando] = useState(false);
+  const [analisisIA, setAnalisisIA] = useState<AnalisisFotosIA | null>(null);
+  const [errorAnalisis, setErrorAnalisis] = useState<string | null>(null);
 
   // Estado del ajuste de valor (preavaluo)
   // Inicializamos con el valor UV para que el valuador acepte por defecto
@@ -297,6 +332,59 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos, documentos
       mostrarToast(res.exito ? 'exito' : 'error', res.mensaje);
       if (res.exito) router.refresh();
     });
+  };
+
+  const totalFotosVisita =
+    contadoresFotos.fachada +
+    contadoresFotos.portada +
+    contadoresFotos.entorno +
+    contadoresFotos.interior;
+
+  const handleAnalizarFotos = async () => {
+    setErrorAnalisis(null);
+    setAnalizando(true);
+    try {
+      const res = await fetch('/api/claude-vision/analizar-fotos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avaluo_id: avaluo.id }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setErrorAnalisis(json.error || 'No se pudo completar el análisis.');
+        setAnalisisIA(null);
+      } else {
+        setAnalisisIA(json.analisis as AnalisisFotosIA);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Error de red';
+      setErrorAnalisis(msg);
+    } finally {
+      setAnalizando(false);
+    }
+  };
+
+  const handleAplicarAnalisis = () => {
+    if (!analisisIA) return;
+    startTransition(async () => {
+      const res = await aplicarAnalisisFotosAction(avaluo.id, {
+        estado_conservacion: analisisIA.estado_conservacion ?? null,
+        construccion_predominante:
+          analisisIA.entorno_urbano?.construccion_predominante ?? null,
+        tipo_zona: analisisIA.entorno_urbano?.tipo_zona ?? null,
+        observaciones: analisisIA.observaciones_tecnicas ?? null,
+      });
+      mostrarToast(res.exito ? 'exito' : 'error', res.mensaje);
+      if (res.exito) {
+        setAnalisisIA(null);
+        router.refresh();
+      }
+    });
+  };
+
+  const handleDescartarAnalisis = () => {
+    setAnalisisIA(null);
+    setErrorAnalisis(null);
   };
 
   const handleDescargarPdf = () => {
@@ -662,7 +750,46 @@ export default function AvaluoDetailClient({ avaluo, contadoresFotos, documentos
             <DotCount label="Entorno" count={contadoresFotos.entorno} esperado={2} />
             <DotCount label="Interior" count={contadoresFotos.interior} esperado={`${MIN_INTERIOR}-${MAX_INTERIOR}`} />
           </div>
+
+          {/* Botón: Analizar fotos con IA (Claude Vision) */}
+          <div className="pt-4 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={handleAnalizarFotos}
+              disabled={analizando || totalFotosVisita < 4}
+              className="w-full bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-700 hover:to-fuchsia-700 disabled:from-slate-200 disabled:to-slate-200 disabled:text-slate-400 text-white text-xs font-bold py-3 rounded-xl transition flex items-center justify-center gap-2 tracking-wider shadow-sm"
+            >
+              {analizando ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
+                    <path fill="currentColor" className="opacity-75" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  ANALIZANDO CON IA…
+                </>
+              ) : totalFotosVisita < 4 ? (
+                'SE REQUIEREN AL MENOS 4 FOTOS'
+              ) : (
+                <>✨ ANALIZAR FOTOS CON IA (CLAUDE VISION)</>
+              )}
+            </button>
+            {errorAnalisis && (
+              <p className="mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {errorAnalisis}
+              </p>
+            )}
+          </div>
         </section>
+      )}
+
+      {/* MODAL — Resultado del análisis IA */}
+      {analisisIA && (
+        <ModalAnalisisIA
+          analisis={analisisIA}
+          onAplicar={handleAplicarAnalisis}
+          onDescartar={handleDescartarAnalisis}
+          pending={pending}
+        />
       )}
 
       {avaluo.estado === 'preavaluo' && (
@@ -1006,6 +1133,213 @@ function DotCount({ label, count, esperado }: { label: string; count: number; es
       <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">{label}</p>
       <p className={`text-sm font-black ${ok ? 'text-emerald-700' : 'text-slate-700'}`}>
         {count}/{esperado}
+      </p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// Modal con resultados del análisis IA de fotos
+// ─────────────────────────────────────────────────────────
+function ModalAnalisisIA({
+  analisis,
+  onAplicar,
+  onDescartar,
+  pending,
+}: {
+  analisis: AnalisisFotosIA;
+  onAplicar: () => void;
+  onDescartar: () => void;
+  pending: boolean;
+}) {
+  const valor = (v: unknown) => (v == null || v === '' ? '—' : String(v));
+
+  return (
+    <div
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onDescartar}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-bold text-purple-600 uppercase tracking-widest">
+              ✨ Análisis IA de fotos
+            </p>
+            <h3 className="text-lg font-black text-slate-900">Resultado de Claude Vision</h3>
+          </div>
+          <button
+            onClick={onDescartar}
+            className="text-slate-400 hover:text-slate-900 transition"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5 text-xs">
+          {/* Resumen principal */}
+          <div className="grid grid-cols-2 gap-3">
+            <InfoIA label="Tipo de inmueble" value={valor(analisis.tipo_inmueble_observado)} />
+            <InfoIA label="Estado de conservación" value={valor(analisis.estado_conservacion)} highlight />
+            <InfoIA label="Edad aparente (años)" value={valor(analisis.edad_aparente_anos)} />
+            <InfoIA label="Niveles observados" value={valor(analisis.num_niveles_observados)} />
+            <InfoIA label="Calidad de acabados" value={valor(analisis.calidad_acabados)} />
+            <InfoIA label="Materiales de fachada" value={valor(analisis.materiales_fachada)} />
+            <InfoIA label="Materiales de cubiertas" value={valor(analisis.materiales_cubiertas)} />
+          </div>
+
+          {/* Instalaciones */}
+          {analisis.instalaciones_visibles && (
+            <div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
+                Instalaciones visibles
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <InfoIA label="Eléctricas" value={valor(analisis.instalaciones_visibles.electricas)} />
+                <InfoIA label="Hidráulicas" value={valor(analisis.instalaciones_visibles.hidraulicas)} />
+                <InfoIA label="Gas" value={analisis.instalaciones_visibles.gas ? 'Sí' : 'No'} />
+                <InfoIA label="Clima" value={analisis.instalaciones_visibles.clima ? 'Sí' : 'No'} />
+              </div>
+            </div>
+          )}
+
+          {/* Entorno urbano */}
+          {analisis.entorno_urbano && (
+            <div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">
+                Entorno urbano
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <InfoIA label="Tipo de zona" value={valor(analisis.entorno_urbano.tipo_zona)} highlight />
+                <InfoIA label="Calidad de vialidad" value={valor(analisis.entorno_urbano.calidad_vialidad)} />
+                <InfoIA label="Infraestructura visible" value={valor(analisis.entorno_urbano.infraestructura_visible)} />
+                <InfoIA
+                  label="Construcción predominante"
+                  value={valor(analisis.entorno_urbano.construccion_predominante)}
+                  highlight
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Factores */}
+          {(analisis.factores_positivos?.length || analisis.factores_negativos?.length) && (
+            <div className="grid grid-cols-2 gap-3">
+              {analisis.factores_positivos && analisis.factores_positivos.length > 0 && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                  <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest mb-1">
+                    Factores positivos
+                  </p>
+                  <ul className="list-disc list-inside text-[11px] text-emerald-900 space-y-0.5">
+                    {analisis.factores_positivos.map((f, i) => (
+                      <li key={i}>{f}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {analisis.factores_negativos && analisis.factores_negativos.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                  <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-1">
+                    Factores negativos
+                  </p>
+                  <ul className="list-disc list-inside text-[11px] text-amber-900 space-y-0.5">
+                    {analisis.factores_negativos.map((f, i) => (
+                      <li key={i}>{f}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Observaciones */}
+          {analisis.observaciones_tecnicas && (
+            <div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">
+                Observaciones técnicas
+              </p>
+              <p className="text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-xl p-3 leading-relaxed">
+                {analisis.observaciones_tecnicas}
+              </p>
+            </div>
+          )}
+
+          {/* Fotos con problemas */}
+          {analisis.fotos_con_problemas && analisis.fotos_con_problemas.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+              <p className="text-[10px] font-bold text-red-700 uppercase tracking-widest mb-1">
+                Fotos con problemas
+              </p>
+              <ul className="text-[11px] text-red-900 space-y-0.5">
+                {analisis.fotos_con_problemas.map((f, i) => (
+                  <li key={i}>
+                    Foto #{f.indice}: {f.problema}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-[11px] text-blue-900">
+            <p className="font-bold mb-1">Al aplicar, se guardará en el expediente:</p>
+            <ul className="list-disc list-inside space-y-0.5">
+              {analisis.estado_conservacion && <li>Estado de conservación</li>}
+              {analisis.entorno_urbano?.tipo_zona && <li>Tipo de zona</li>}
+              {analisis.entorno_urbano?.construccion_predominante && <li>Construcción predominante</li>}
+              {analisis.observaciones_tecnicas && <li>Observaciones técnicas (agregadas a notas)</li>}
+            </ul>
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 bg-white border-t border-slate-100 px-6 py-4 flex gap-3">
+          <button
+            type="button"
+            onClick={onDescartar}
+            disabled={pending}
+            className="flex-1 py-3 border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-50 transition disabled:opacity-50"
+          >
+            DESCARTAR
+          </button>
+          <button
+            type="button"
+            onClick={onAplicar}
+            disabled={pending}
+            className="flex-1 py-3 bg-[#0F172A] hover:bg-slate-700 disabled:bg-slate-300 text-white rounded-xl text-xs font-bold transition"
+          >
+            {pending ? 'APLICANDO…' : 'APLICAR AL EXPEDIENTE'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function InfoIA({
+  label,
+  value,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-xl border px-3 py-2 ${
+        highlight ? 'bg-purple-50 border-purple-200' : 'bg-slate-50 border-slate-200'
+      }`}
+    >
+      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{label}</p>
+      <p
+        className={`text-xs font-bold mt-0.5 capitalize ${
+          highlight ? 'text-purple-900' : 'text-slate-800'
+        }`}
+      >
+        {value}
       </p>
     </div>
   );

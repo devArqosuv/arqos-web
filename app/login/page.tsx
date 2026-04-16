@@ -13,6 +13,9 @@ function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const errorQuery = searchParams.get('error');
+  // El flujo de "Solicitar informe formal" redirige aquí con ?registro=ok
+  // tras crear la cuenta, para pedirle al cliente que inicie sesión.
+  const registroOk = searchParams.get('registro') === 'ok';
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,6 +55,8 @@ function LoginPageInner() {
       ? '/dashboard/admin'
       : rol === 'controlador'
       ? '/dashboard/controlador'
+      : rol === 'cliente'
+      ? '/dashboard/cliente'
       : '/dashboard/valuador';
 
     router.push(destino);
@@ -82,6 +87,11 @@ function LoginPageInner() {
 
         <form onSubmit={handleLogin} className="w-full bg-white text-slate-900 rounded-3xl shadow-2xl overflow-hidden">
           <div className="p-8 space-y-6">
+            {registroOk && !error && (
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-semibold px-4 py-3 rounded-lg">
+                Registro exitoso. Inicia sesión para ver tu expediente.
+              </div>
+            )}
             {(error || errorQuery) && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-xs font-semibold px-4 py-3 rounded-lg">
                 {error || 'Hubo un error al iniciar sesión. Intenta de nuevo.'}
