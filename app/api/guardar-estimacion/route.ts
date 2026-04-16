@@ -3,11 +3,15 @@ import { createClient } from '@supabase/supabase-js';
 import { createRateLimiter, getClientIp } from '@/util/rate-limit';
 import { createLogger } from '@/util/logger';
 
-// Usa el service role para insertar sin auth (el portal es público)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || '',
-);
+// Lazy init para evitar que el build collect-page-data falle si faltan env vars
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
+  if (!url || !key) {
+    throw new Error('Supabase env vars missing (NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)');
+  }
+  return createClient(url, key);
+}
 
 const logger = createLogger('guardar-estimacion');
 
@@ -64,6 +68,7 @@ export async function POST(req: NextRequest) {
 
     logger.info('request_start', { ip, email: body.email, tipo: body.tipo_inmueble });
 
+    const supabase = getSupabase();
     const { data, error } = await supabase
       .from('estimaciones_portal')
       .insert({
