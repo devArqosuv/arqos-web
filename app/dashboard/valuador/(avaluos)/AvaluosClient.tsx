@@ -6,6 +6,7 @@ import { crearAvaluoVacioAction, registrarDocumentosAction } from '@/util/supaba
 import type { TipoInmueble } from '@/types/arqos';
 import { createClient } from '@/util/supabase/client';
 import ValuadorTopbar from '../ValuadorTopbar';
+import ConfirmacionDatosIA, { type Correccion, type DatosIA } from './ConfirmacionDatosIA';
 
 // ── Tipos ──
 type TipoAvaluo = '1.0' | '2.0' | '';
@@ -121,6 +122,8 @@ interface ResultadoAnalisis {
     valor_estimado: string | null;
     observaciones: string | null;
   };
+  // Confianza (0-1) por campo que la IA llenó. Puede faltar (legacy).
+  confianza?: Record<string, number>;
 }
 
 const DOCS_TIPO_1: DocumentoRequerido[] = [
@@ -168,6 +171,11 @@ export default function AvaluosClient() {
   // El motivo se persiste en `notas` del avalúo para auditoría posterior.
   const [validacionManual, setValidacionManual] = useState(false);
   const [motivoOverride, setMotivoOverride] = useState('');
+
+  // ── Paso obligatorio de confirmación humana sobre datos IA ──
+  // La IA extrae datos y los muestra; el valuador DEBE revisar/corregir
+  // antes de que se grabe el avaluo. Se persiste en shf_correcciones.
+  const [mostrandoConfirmacion, setMostrandoConfirmacion] = useState(false);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const tipoDropdownRef = useRef<HTMLDivElement>(null);
   const bancoDropdownRef = useRef<HTMLDivElement>(null);
@@ -535,13 +543,15 @@ export default function AvaluosClient() {
           valor_estimado:          r?.datos_consolidados?.valor_estimado          ?? null,
           observaciones:           r?.datos_consolidados?.observaciones           ?? null,
         },
+        confianza: (r as { confianza?: Record<string, number> })?.confianza ?? {},
       };
       setResultado(data);
       if (data.valido) {
         if (data.datos_consolidados.valor_estimado) setValorBase(data.datos_consolidados.valor_estimado);
         if (data.datos_consolidados.observaciones) setNotasRiesgo(data.datos_consolidados.observaciones);
-        // IA válida → auto-guardar inmediatamente (genera folio + mueve PDFs)
-        await ejecutarGuardado(data, subidos, false);
+        // IA válida → ABRIR PASO DE CONFIRMACIÓN HUMANA.
+        // El valuador debe revisar/corregir y presionar "Confirmar" para grabar.
+        setMostrandoConfirmacion(true);
       }
     } catch (err) {
       const mensaje = err instanceof Error
@@ -553,11 +563,33 @@ export default function AvaluosClient() {
     }
   };
 
+  // ─── Handlers del paso de confirmación ───
+  const handleConfirmacionUsuario = async (datosFinales: DatosIA, correcciones: Correccion[]) => {
+    if (!resultado) return;
+    // Construimos un ResultadoAnalisis con los datos editados por el humano
+    const resultadoEditado: ResultadoAnalisis = {
+      ...resultado,
+      datos_consolidados: {
+        ...resultado.datos_consolidados,
+        ...(datosFinales as Partial<ResultadoAnalisis['datos_consolidados']>),
+      },
+    };
+    setMostrandoConfirmacion(false);
+    await ejecutarGuardado(resultadoEditado, tempStoragePaths, validacionManual, correcciones);
+  };
+
+  const handleCancelarConfirmacion = () => {
+    setMostrandoConfirmacion(false);
+    // Permanece el resultado visible pero el valuador puede subir nuevos docs
+    // o re-analizar sin haber confirmado.
+  };
+
   // ─── Lógica de guardado (reutilizada por auto-save y override manual) ───
   const ejecutarGuardado = async (
     resultadoIA: ResultadoAnalisis,
     archivosTemp: typeof tempStoragePaths,
     esOverride: boolean,
+    correccionesHumanas: Correccion[] = [],
   ) => {
     setGuardando(true);
     setGuardadoResult(null);
@@ -646,6 +678,9 @@ export default function AvaluosClient() {
       // Legacy fields (para compatibilidad)
       propietario_nombre: datos.propietario || undefined,
       clave_catastral: datos.clave_catastral || undefined,
+      // Metadata IA (confianza + correcciones humanas para auditoría)
+      ia_confianza: resultadoIA.confianza ?? {},
+      ia_correcciones: correccionesHumanas,
       // Notas
       notas: [
         esOverride
@@ -756,10 +791,12 @@ export default function AvaluosClient() {
     }
   };
 
-  // handleGuardar: solo se usa para el override manual (IA bloqueó pero valuador fuerza)
+  // handleGuardar: override manual (IA bloqueó pero valuador fuerza).
+  // En este caso también se abre el paso de confirmación para que el valuador
+  // revise/corrija los datos que la IA alcanzó a extraer antes de crear el expediente.
   const handleGuardar = async () => {
     if (!validacionManual || !tipoAvaluo || !resultado) return;
-    await ejecutarGuardado(resultado, tempStoragePaths, true);
+    setMostrandoConfirmacion(true);
   };
 
   const limpiarTodo = () => {
@@ -772,6 +809,7 @@ export default function AvaluosClient() {
     setGuardadoResult(null);
     setValidacionManual(false);
     setMotivoOverride('');
+    setMostrandoConfirmacion(false);
     resetUsoSuelo();
   };
 
@@ -788,6 +826,17 @@ export default function AvaluosClient() {
 
   return (
       <main className="flex-1 flex flex-col overflow-hidden">
+
+        {/* Paso obligatorio: revisar y corregir datos de la IA antes de crear el expediente */}
+        {mostrandoConfirmacion && resultado && (
+          <ConfirmacionDatosIA
+            datosIA={resultado.datos_consolidados as unknown as DatosIA}
+            confianza={resultado.confianza ?? {}}
+            onConfirmar={handleConfirmacionUsuario}
+            onCancelar={handleCancelarConfirmacion}
+            cargando={guardando}
+          />
+        )}
 
         <ValuadorTopbar paginaActiva="Avalúos" />
 

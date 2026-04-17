@@ -118,6 +118,9 @@ export async function crearAvaluoVacioAction(
       // Folios
       folio_infonavit:         payload.folio_infonavit || null,
       clave_unica_vivienda:    payload.clave_unica_vivienda || null,
+      // Metadata IA (confianza + timestamp de confirmación humana)
+      ia_confianza:            payload.ia_confianza || {},
+      ia_datos_confirmados_at: new Date().toISOString(),
     })
     .select('id, folio')
     .single()
@@ -130,6 +133,25 @@ export async function crearAvaluoVacioAction(
     }
   }
   console.log('[crearAvaluoVacio] avalúo creado:', avaluo.id, avaluo.folio)
+
+  // Registrar correcciones humanas sobre campos IA para auditoría SHF/CNBV.
+  // Best-effort: si falla no rompe la creación del avalúo, sólo se loguea.
+  if (payload.ia_correcciones && payload.ia_correcciones.length > 0) {
+    const filas = payload.ia_correcciones.map((c) => ({
+      avaluo_id:    avaluo.id,
+      campo:        c.campo,
+      valor_ia:     c.valor_ia,
+      valor_humano: c.valor_humano,
+      confianza_ia: c.confianza_ia,
+      usuario_id:   user.id,
+    }))
+    const { error: errCorr } = await supabase.from('shf_correcciones').insert(filas)
+    if (errCorr) {
+      console.error('[crearAvaluoVacio] shf_correcciones insert falló:', errCorr.message)
+    } else {
+      console.log(`[crearAvaluoVacio] ${filas.length} correcciones IA registradas`)
+    }
+  }
 
   return {
     exito: true,

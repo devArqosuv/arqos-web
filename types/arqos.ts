@@ -187,6 +187,14 @@ export interface CrearAvaluoPayload {
   // Campos SHF — folios
   folio_infonavit?: string
   clave_unica_vivienda?: string
+  // Metadata IA para auditoría (nuevo, fase 2026-04-17)
+  ia_confianza?: Record<string, number>
+  ia_correcciones?: Array<{
+    campo: string
+    valor_ia: string | null
+    valor_humano: string | null
+    confianza_ia: number | null
+  }>
 }
 
 // ── Documento ──────────────────────────────────────────────

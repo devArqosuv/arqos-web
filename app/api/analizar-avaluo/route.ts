@@ -454,6 +454,15 @@ Responde ÚNICAMENTE con un objeto JSON válido, sin markdown, sin backticks, si
     // === OBSERVACIONES GENERALES ===
     "valor_estimado": "null (no aplica para validación documental)",
     "observaciones": "resumen de validación: documentos revisados, datos confirmados, advertencias no bloqueantes y cualquier observación relevante para el expediente"
+  },
+  "confianza": {
+    // Nivel de certeza por campo — número entre 0 y 1.
+    // 1.0 = extraído literal de un documento oficial, sin ambigüedad.
+    // 0.8 = extraído con claridad pero con algún detalle menor.
+    // 0.6 = inferido del contexto o con menor certeza.
+    // 0.3 = extracción muy débil, el humano debe revisar obligatoriamente.
+    // Incluye UN entry por cada campo NO-null en datos_consolidados.
+    // Ejemplo: { "propietario": 0.95, "superficie_terreno": 0.7, "tipo_zona": 0.5 }
   }
 
 INSTRUCCIÓN FINAL IMPORTANTE — EXTRAE ABSOLUTAMENTE TODO:
@@ -561,6 +570,23 @@ REGLAS CRÍTICAS DE SALIDA:
         },
         { status: 500 }
       );
+    }
+
+    // Post-proceso: asegurar que `confianza` exista y tenga entry por cada campo no-null.
+    // Si la IA no la devolvió (prompts antiguos), asignamos 0.75 por defecto como señal
+    // neutral — el humano debe revisar de todos modos. Campos null quedan sin entry.
+    const parsedObj = parsed as Record<string, unknown> | null;
+    if (parsedObj && typeof parsedObj === 'object') {
+      const datos = (parsedObj.datos_consolidados ?? {}) as Record<string, unknown>;
+      const confianzaRaw = (parsedObj.confianza ?? {}) as Record<string, unknown>;
+      const confianza: Record<string, number> = {};
+      for (const [campo, valor] of Object.entries(datos)) {
+        if (valor === null || valor === undefined || valor === '') continue;
+        const raw = confianzaRaw[campo];
+        const n = typeof raw === 'number' ? raw : Number(raw);
+        confianza[campo] = Number.isFinite(n) && n >= 0 && n <= 1 ? n : 0.75;
+      }
+      parsedObj.confianza = confianza;
     }
 
     logger.info('request_success', { userId: user.id, latencyMs: Date.now() - startedAt });
